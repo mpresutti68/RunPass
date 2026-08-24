@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Obfuscator>
+  <!-- Variabili di percorso: usa le macro di Visual Studio -->
+  <Var name="InPath" value="." />
+  <Var name="OutPath" value=".\Obfuscated" />
+
+  <!-- Impostazioni principali di offuscamento -->
+  <!-- Mantiene intatti i nomi dei metodi pubblici affinché la DLL possa essere usata da altri progetti -->
+  <Var name="KeepPublicApi" value="true" />
+  
+  <!-- Nasconde tutto ciò che è interno, privato o protetto -->
+  <Var name="HidePrivateApi" value="true" />
+  
+  <!-- Abilita il renaming di proprietà, eventi e campi -->
+  <Var name="RenameProperties" value="true" />
+  <Var name="RenameEvents" value="true" />
+  <Var name="RenameFields" value="true" />
+  
+  <!-- Nasconde le stringhe nel codice (molto utile per nascondere query SQL, connection string o payload esadecimali) -->
+  <Var name="StringCompress" value="true" />
+  
+  <!-- Ottimizza il codice IL per renderne più complessa la lettura -->
+  <Var name="OptimizeMethods" value="true" />
+  <Var name="SuppressIldasm" value="true" />
+
+  <!-- Specifica l'assembly (o gli assembly) da offuscare -->
+  <Module file="$(InPath)\CourseMng.dll">
+    
+    <!-- ESEMPIO DI ESCLUSIONE 1: Escludere un'intera classe (es. il punto di ingresso o l'interfaccia principale) -->
+	<!-- SkipType name="PosTerminalExtension.Core.PluginEntryPoint" /> -->
+    
+    <!-- ESEMPIO DI ESCLUSIONE 2: Escludere un metodo specifico che non deve essere rinominato -->
+	<!-- SkipMethod type="PosTerminalExtension.Hardware.ThermalPrinter" name="PrintReceipt" /> -->
+    
+    <!-- ESEMPIO DI ESCLUSIONE 3: Escludere un intero namespace (es. modelli dati serializzati o DTO) -->
+	<!-- SkipNamespace name="PosTerminalExtension.Data.Models" /> -->
+
+  </Module>
+</Obfuscator>

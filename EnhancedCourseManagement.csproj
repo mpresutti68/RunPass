@@ -96,10 +96,10 @@
     <Reference Include="PresentationFramework.Aero2">
       <HintPath>..\..\..\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\PresentationFramework.Aero2.dll</HintPath>
     </Reference>
-	  <Reference Include="SimphonyDataStore">
-		  <HintPath>lib\SimphonyDataStore.dll</HintPath>
-		  <Private>True</Private>
-	  </Reference>
+    <Reference Include="SimphonyDataStore">
+      <HintPath>..\..\Micros\Simphony\WebServer\wwwroot\EGateway\Handlers\SimphonyDataStore.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System">
       <HintPath>..\..\..\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll</HintPath>
     </Reference>

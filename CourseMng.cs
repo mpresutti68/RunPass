@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Data;
 using System.Data.SqlClient;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
@@ -184,9 +185,9 @@ namespace CourseMng
             INNER JOIN datastore.string_table nam on prn.NameID = nam.StringNumberID
             WHERE ConnectionString = 'Micros.Devices.RollPrinter.Ethernet'
         ),
-                OrderDevice as (
-                SELECT  [OrdDvcIndex]
-                FROM [DataStore].[dbo].[WORKSTATION_ORDER_DEVICE]
+            OrderDevice as (
+                SELECT  OrdDvcIndex
+                FROM DataStore.WORKSTATION_ORDER_DEVICE
                 where IsVisible = 1 and IsDeleted =0
                         and WorkstationID=@WksID
         )
@@ -1099,6 +1100,8 @@ namespace CourseMng
                     quant = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).SalesCount.ToString();
                     price = (((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).Total / ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).SalesCount).ToString();
                     seatart = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).Seat.ToString();
+                    if (((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).WeighedItem)
+                        pesoart = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).NetWeight.ToString("0.000", new CultureInfo("it-IT"));
                     if (item.DetailItem.ReferenceEntries.Count > 0) referenceArt = item.DetailItem.ReferenceEntries[0].Descriptor;
 
                     var conds = item.DetailItem;
@@ -1545,6 +1548,13 @@ namespace CourseMng
                     art.Append(articolo.reference);
                     art.Append("\r\n");
                 }
+                if (articolo.peso != null && articolo.peso != "")
+                {
+                    art.Append("  Peso: ");
+                    art.Append(articolo.peso);
+                    art.Append("\r\n");
+                }
+                //payload.AddRange(EscPos.TextDoubleHeight);
                 payload.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
                 foreach (CondimentPrint condimento in articolo.condiments)
                 {
@@ -1897,7 +1907,7 @@ namespace CourseMng
                 {
                     OpsContext.ShowMessage("Errore Lettura Device");
                     OpsContext.ShowMessage(ex.Message);
-                    myLog.Error("FDC6E8AF - Errore Lettura Articoli", ex);
+                    myLog.Error("FDC7F8AF - Errore Lettura Articoli", ex);
                 }
             }
 
@@ -2304,6 +2314,13 @@ namespace CourseMng
             {
                 OpsContext.ShowMessage("Apri prima un conto!");
             }
+        }
+
+
+        [ExtensibilityMethod]
+        public void VisCode()
+        {
+            OpsContext.ShowMessage(OpsContext.PropHierStrucID.ToString());
         }
 
         [ExtensibilityMethod]

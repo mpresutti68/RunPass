@@ -467,7 +467,6 @@ namespace CourseMng
             return json;
         }
     }
-
     [Export(typeof(OpsExtensibilityApplication))]
 
     public class CondimentPrint
@@ -481,6 +480,7 @@ namespace CourseMng
 
     public class MenuItemPrint
     {
+        public long miobjnum { get; set; }
         public string quant { get; set; }
         public string nome { get; set; }
         public string reference { get; set; }
@@ -492,6 +492,7 @@ namespace CourseMng
         public int ODIndex { get; set; }
         public List<CondimentPrint> condiments { get; set; }
     }
+
     public class TestWork
     {
         public static long LeggiInt(string codice8Cifre, long chiaveMolt = 7398213, long chiaveAdd = 59283714)
@@ -927,7 +928,6 @@ namespace CourseMng
             }
             return null;
         }
-
         private MyConfig _config; 
         private List<MenuTemplate> _listaMenu;
         private bool _coursemng_enable = true;
@@ -1089,8 +1089,10 @@ namespace CourseMng
                     string referenceArt = "";
                     string seatart;
                     string pesoart = "";
+                    long miobjnum = 0;
                     List<CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
 
+                    miobjnum = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).MiObjNum;
                     nomeArt = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).Name.ToString();
                     corsanum = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).KdsCourseNum;
                     corsaart = corse[corsanum - 1].CorsaNome;
@@ -1120,11 +1122,22 @@ namespace CourseMng
                         ListaCondiment.Add(Condiments);
                     }
 
-
-                    MenuItemPrint Articolo = new MenuItemPrint
-                    { quant = quant, nome = nomeArt, prezzo = price, corsa = corsaart, condiments = ListaCondiment, numcorsa = corsanum, reference = referenceArt, peso = pesoart, seat = seatart };
-                    ListaArticoli.Add(Articolo);
-
+                    bool newart =true;
+                    if (ListaCondiment == null || ListaCondiment.Count == 0)
+                    { 
+                        MenuItemPrint risultato = ListaArticoli.FirstOrDefault(artic => artic.miobjnum == miobjnum && (artic.numcorsa == corsanum) && (artic.condiments == null || artic.condiments.Count == 0));
+                        if (risultato != null)
+                        {
+                            risultato.quant = (int.Parse(risultato.quant) + int.Parse(quant)).ToString();
+                            newart = false;
+                        }
+                    }
+                    if (newart)
+                    {
+                        MenuItemPrint Articolo = new MenuItemPrint
+                        { quant = quant, nome = nomeArt, prezzo = price, corsa = corsaart, condiments = ListaCondiment, numcorsa = corsanum, reference = referenceArt, peso = pesoart, seat = seatart, miobjnum = miobjnum };
+                        ListaArticoli.Add(Articolo);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1465,7 +1478,7 @@ namespace CourseMng
             payload.AddRange(EscPos.TextTripleSize);
             payload.AddRange(EscPos.TextBoldOn);
             if (datiComanda.Tavolo != "") riga = string.Format("\r\nTav. {0}\r\n", datiComanda.Tavolo);
-            else riga = string.Format("Check {0} \r\n", datiComanda.CheckNumber);
+            else riga = string.Format("\r\nCheck {0} \r\n", datiComanda.CheckNumber);
             payload.AddRange(Encoding.ASCII.GetBytes(riga));
 
             //ID Conto -- testo doppio
@@ -1574,7 +1587,7 @@ namespace CourseMng
 
             payload.AddRange(EscPos.TextNormal);
             payload.AddRange(EscPos.AlignLeft);
-            riga = string.Format("{0}\r\n\r\n", datiComanda.Utente);
+            riga = string.Format("{0} -- {1}\r\n\r\n", datiComanda.Utente,DateTime.Now.ToString());
             payload.AddRange(Encoding.ASCII.GetBytes(riga));
 
             // Taglio carta
@@ -1610,7 +1623,7 @@ namespace CourseMng
             payload.AddRange(EscPos.TextTripleSize);
             payload.AddRange(EscPos.TextBoldOn);
             if (datiComanda.Tavolo != "") riga = string.Format("\r\nTav. {0}\r\n", datiComanda.Tavolo);
-            else riga = string.Format("Check {0} \r\n", datiComanda.CheckNumber);
+            else riga = string.Format("\r\nCheck {0} \r\n", datiComanda.CheckNumber);
             payload.AddRange(Encoding.ASCII.GetBytes(riga));
 
             //ID Conto -- testo doppio

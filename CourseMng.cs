@@ -935,7 +935,7 @@ namespace CourseMng
         private bool _extensionEnbled = true;
         private int _tipoDB = 0;
         private bool _menu_enable;
-        private bool _menu_withCourse;
+        //private bool _menu_withCourse;
         private int _actual_Rvc;
         private OrderDeviceCache _device;
         private string _connStringMySql = "Server=127.0.0.1;Database=datastore;";
@@ -944,6 +944,7 @@ namespace CourseMng
         private string _connString = "";
         private HashSet<int> _CorseMarciate;
         private HashSet<int> _CorseUsate;
+        //private OpsExtensibilityApplication _app;
         //private List<NomiCorse> _corse;
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _processedPrints =
@@ -971,6 +972,8 @@ namespace CourseMng
         private EventProcessingInstruction GestInitEvent(object sender, OpsInitEventArgs args)
         {
             myLog.Info("Estensione Simphony avviata con successo.");
+
+            //var dataStore = this.DataStore;
 
             if (_config is null)
             {
@@ -1002,14 +1005,16 @@ namespace CourseMng
             myLog.Debug("OpsInitEvent");
             myLog.Debug(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString()));
 
-            var dataStore = OpsContext.DataStore;
-            //var dataStore = OpsExtensibilityApplication.DataStore;
-            var dbSettingsField = dataStore.GetType().GetField("_dbSettings", BindingFlags.NonPublic | BindingFlags.Instance);
+#pragma warning disable 0618
+            var dataStoreold = OpsContext.DataStore;
+#pragma warning restore 0618           
+            
+            var dbSettingsField = dataStoreold.GetType().GetField("_dbSettings", BindingFlags.NonPublic | BindingFlags.Instance);
 
             if (dbSettingsField != null)
             {
                 // Otteniamo l'istanza reale di SimphonyUtilities.Settings.DatabaseSettings
-                var dbSettingsObj = dbSettingsField.GetValue(dataStore);
+                var dbSettingsObj = dbSettingsField.GetValue(dataStoreold);
 
                 if (dbSettingsObj != null)
                 {

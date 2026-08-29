@@ -1,24 +1,12 @@
 ﻿//using Google.Protobuf.WellKnownTypes;
-using Micros.DataStore;
-using Micros.Ops;
-using Micros.Ops.Extensibility;
-using Micros.Ops.Input;
-
-using Micros.PosCore.Extensibility;
-using Micros.PosCore.Extensibility.DataStore;
-using Micros.PosCore.Extensibility.Ops;
-using Micros.PosCore.Extensibility.Printing;
-
-using Micros.PosCore.Printing;
-using Microsoft.PointOfService;
-using MySql.Data.MySqlClient;
-using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Data;
+using System.Data.Common;
+using System.Data.Odbc;
 using System.Data.SqlClient;
 using System.Globalization;
 using System.IO;
@@ -31,12 +19,67 @@ using System.Runtime.Remoting.Messaging;
 using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
-using static Mysqlx.Expect.Open.Types.Condition.Types;
+using Micros.DataStore;
+using Micros.Ops;
+using Micros.Ops.Extensibility;
+using Micros.Ops.Input;
+using Micros.PosCore.Extensibility;
+using Micros.PosCore.Extensibility.DataStore;
+using Micros.PosCore.Extensibility.Ops;
+using Micros.PosCore.Extensibility.Printing;
+using Micros.PosCore.Printing;
+using Microsoft.PointOfService;
+using MySql.Data.MySqlClient;
+using Newtonsoft.Json;
 using static System.Net.Mime.MediaTypeNames;
+using static Mysqlx.Expect.Open.Types.Condition.Types;
 
 
 namespace CourseMng
 {
+    public interface IDbConnectionFactory
+    {
+        int TipoDB { get; }
+        DbConnection CreateConnection();
+    }
+
+    public class DbConnectionFactory : IDbConnectionFactory
+    {
+        public int TipoDB { get; }
+        private readonly string _connectionString;
+
+        public DbConnectionFactory(int tipoDB, string connectionString)
+        {
+            TipoDB = tipoDB;
+            _connectionString = connectionString;
+        }
+
+        public DbConnection CreateConnection()
+        {
+            DbConnection connection;
+
+            if (TipoDB == 0)
+            {
+                connection = new SqlConnection(_connectionString);
+            }
+            else if (TipoDB == 2)
+            {
+                connection = new MySqlConnection(_connectionString);
+            }
+            else
+            {
+                throw new NotSupportedException($"Tipo di database {TipoDB} non supportato.");
+            }
+
+            if (connection.State != ConnectionState.Open)
+            {
+                connection.Open();
+            }
+
+            return connection;
+        }
+    }
+
     public static class myLog
     {
         private static readonly object _lock = new object();
@@ -175,10 +218,10 @@ namespace CourseMng
      
     public class OrderDeviceCache : IEnumerable<OrderDeviceCache.OrderDeviceInfo>
     {
-        private readonly string _connectionString;
+        //private readonly string _connectionString;
         private readonly Dictionary<string, OrderDeviceInfo> _items;
-
-        private readonly string _sql = @"
+        private readonly IDbConnectionFactory _dbFactory;
+        private readonly string _queryMySql = @"
         WITH Printer as (
             SELECT prn.PrinterID, prn.ConfigurationString, concat(ObjectNumber, ' ', nam.StringText) NomePrinter
             FROM datastore.printer prn
@@ -219,7 +262,7 @@ namespace CourseMng
         INNER JOIN OrderDevice odact on odv.OrdDvcIndex = odact.OrdDvcIndex
         WHERE hiu.RevCtrID = @RevCtrID;";
 
-        private readonly string _sqlServerQuery = @"
+        private readonly string _querySqlServer = @"
             WITH PrinterCTE as (
                 SELECT prn.PrinterID, prn.ConfigurationString, CONCAT(ObjectNumber, ' ', nam.StringText) NomePrinter
                 FROM datastore.dbo.printer prn
@@ -273,12 +316,20 @@ namespace CourseMng
             INNER JOIN OrderDevice odact on odv.OrdDvcIndex = odact.OrdDvcIndex
             WHERE hiu.RevCtrID = @RevCtrID; --12847";
 
-        public OrderDeviceCache(string connectionString)
+        /*public OrderDeviceCache(string connectionString)
         {
             _connectionString = connectionString;
             _items = new Dictionary<string, OrderDeviceInfo>();
         }
+        */
 
+        public OrderDeviceCache(IDbConnectionFactory dbFactory)
+        {
+            _dbFactory = dbFactory;
+            _items = new Dictionary<string, OrderDeviceInfo>();
+        }
+
+        /*
         public void Load(int typeDb, int revCtrlId, int wksID)
         {
             if (typeDb == 0)
@@ -344,8 +395,74 @@ namespace CourseMng
                     }
                 }
             }
+        */
+        public void Load(int revCtrId, int wksID)
+        {
+            _items.Clear();
+
+            string query = _dbFactory.TipoDB == 2 ? _queryMySql : _querySqlServer;
+
+            // Creazione e apertura gestite dalla Factory
+            using (DbConnection conn = _dbFactory.CreateConnection())
+            {
+                using (DbCommand cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = query;
+
+                    // Creazione generica dei parametri (sostituisce AddWithValue)
+                    DbParameter paramRev = cmd.CreateParameter();
+                    paramRev.ParameterName = "@RevCtrID";
+                    paramRev.Value = revCtrId;
+                    cmd.Parameters.Add(paramRev);
+
+                    DbParameter paramWks = cmd.CreateParameter();
+                    paramWks.ParameterName = "@WksID";
+                    paramWks.Value = wksID;
+                    cmd.Parameters.Add(paramWks);
+
+                    using (DbDataReader reader = cmd.ExecuteReader())
+                    {
+                        int ordDvcIndexCol = reader.GetOrdinal("OrdDvcIndex");
+
+                        while (reader.Read())
+                        {
+                            OrderDeviceInfo item = new OrderDeviceInfo();
+
+                            item.OrdDvcIndex = !reader.IsDBNull(ordDvcIndexCol)
+                                ? reader.GetInt16(ordDvcIndexCol).ToString()
+                                : string.Empty;
+
+                            item.OptionBits = reader["OptionBits"] as string ?? string.Empty;
+                            item.NomeOrderDevice = reader["NomeOrderDevice"] as string ?? string.Empty;
+
+                            item.PrimaryID = reader["PrimaryID"] != DBNull.Value ? Convert.ToInt32(reader["PrimaryID"]) : 0;
+                            item.BackupID = reader["SecondaryBackupID"] != DBNull.Value ? Convert.ToInt32(reader["SecondaryBackupID"]) : 0;
+
+                            item.IPPrinter = reader["IP_Printer"] as string ?? string.Empty;
+                            item.PrinterName = reader["PrinterName"] as string ?? string.Empty;
+
+                            // Porte fisse per ora come da tuo codice
+                            item.PortaPrinter = 9100;
+
+                            item.RvcID = reader["RevCtrID"] != DBNull.Value ? Convert.ToInt32(reader["RevCtrID"]) : 0;
+
+                            item.IPBackup = reader["IP_Backup"] as string ?? string.Empty;
+                            item.BackupName = reader["BackupName"] as string ?? string.Empty;
+                            item.TypeOD = reader["TypeOD"] as string ?? string.Empty;
+
+                            item.PortaBackup = 9100;
+
+                            if (!string.IsNullOrEmpty(item.OrdDvcIndex) && !_items.ContainsKey(item.OrdDvcIndex))
+                            {
+                                _items.Add(item.OrdDvcIndex, item);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
+        /*
         private void LoadSqlServer(int revCtrId, int wksID)
         {
             _items.Clear();
@@ -354,7 +471,7 @@ namespace CourseMng
             {
                 conn.Open();
 
-                using (SqlCommand cmd = new SqlCommand(_sqlServerQuery, conn))
+                using (SqlCommand cmd = new SqlCommand(_querySqlServer, conn))
                 {
                     cmd.Parameters.AddWithValue("@RevCtrID", revCtrId);
                     cmd.Parameters.AddWithValue("@WksID", wksID);
@@ -408,6 +525,7 @@ namespace CourseMng
                 }
             }
         }
+        */
 
         // Mantenuto un solo metodo di recupero per evitare duplicazioni
         public OrderDeviceInfo GetDevice(int ordDvcIndex)
@@ -455,7 +573,7 @@ namespace CourseMng
         }
     }
     
-    public static class ConfigLoader
+    /*public static class ConfigLoader
     {
         public static string Load()
         {
@@ -468,6 +586,8 @@ namespace CourseMng
             return json;
         }
     }
+    */
+
     [Export(typeof(OpsExtensibilityApplication))]
 
     public class CondimentPrint
@@ -573,7 +693,7 @@ namespace CourseMng
         Task<List<NomiCorse>> OttieniNomiCorseAsync();
     }
 
-    public class CorseRepositoryMySql : ICorseRepository
+    /*public class CorseRepositoryMySql : ICorseRepository
     {
         private readonly string _connectionString;
 
@@ -659,8 +779,9 @@ namespace CourseMng
             return risultati;
         }
     }
+    */
 
-    public class CorseRepositorySqlServer : ICorseRepository
+    /*public class CorseRepositorySqlServer : ICorseRepository
     {
         private readonly string _connectionString;
 
@@ -711,6 +832,134 @@ namespace CourseMng
                 {
                     await connection.OpenAsync();
                     using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            risultati.Add(new NomiCorse
+                            {
+                                CorsaNum = Convert.ToInt32(reader["CorsaNum"]),
+                                CorsaNome = reader["CorsaNome"] != DBNull.Value ? reader["CorsaNome"].ToString() : null
+                            });
+                        }
+                    }
+                }
+            }
+            return risultati;
+        }
+    }
+    */
+
+    public class CorseRepository : ICorseRepository
+    {
+        private readonly IDbConnectionFactory _dbFactory;
+
+        // Qui incollerai per intero la tua query MySQL (con WITH RECURSIVE)
+        private readonly string _queryMySql = @"
+            WITH RECURSIVE albero AS
+            (
+                SELECT hs.HierStrucID, hs.HierUnitID, 0 AS Livello
+                FROM datastore.hierarchy_structure hs
+                WHERE hs.ParentHierStrucID IS NULL
+
+                UNION ALL
+
+                SELECT hs.HierStrucID, hs.HierUnitID, a.Livello + 1 AS Livello
+                FROM datastore.hierarchy_structure hs
+                INNER JOIN albero a 
+                    ON hs.ParentHierStrucID = a.HierStrucID
+            ),
+            Livelli AS
+            (
+                SELECT 
+                    a.HierStrucID,
+                    nam.StringText AS Nome,
+                    MAX(a.Livello) OVER (PARTITION BY a.HierUnitID) AS Livello
+                FROM albero a
+                INNER JOIN datastore.hierarchy_unit hu 
+                    ON a.HierUnitID = hu.HierUnitID
+                INNER JOIN datastore.string_table nam 
+                    ON hu.NameID = nam.StringNumberID
+            ),
+            Course AS
+            (
+                SELECT cou.ObjectNumber CorsaNum,
+                       nam.StringText CorsaNome,
+                       lvl.HierStrucID,
+                       lvl.Nome,
+                       lvl.Livello
+                FROM datastore.dining_course cou
+                INNER JOIN datastore.string_table nam ON cou.NameID=nam.StringNumberID
+                LEFT JOIN Livelli lvl 
+                    ON cou.HierStrucID = lvl.HierStrucID
+            ),
+            CuorsePriceMax AS
+            (
+                SELECT *,
+                       ROW_NUMBER() OVER
+                       (
+                           PARTITION BY CorsaNum
+                           ORDER BY Livello DESC
+                       ) AS rn
+                FROM Course
+            )
+            SELECT CorsaNum, CorsaNome
+            FROM CuorsePriceMax
+            WHERE rn=1";
+
+        // Qui incollerai per intero la tua query SQL Server (senza RECURSIVE)
+        private readonly string _querySqlServer = @"
+            WITH albero AS
+            (
+                SELECT hs.HierStrucID, hs.HierUnitID, 0 AS Livello
+                FROM datastore.dbo.hierarchy_structure hs
+                WHERE hs.ParentHierStrucID IS NULL
+                UNION ALL
+                SELECT hs.HierStrucID, hs.HierUnitID, a.Livello + 1 AS Livello
+                FROM datastore.dbo.hierarchy_structure hs
+                INNER JOIN albero a ON hs.ParentHierStrucID = a.HierStrucID
+            ),
+            Livelli AS (
+                SELECT a.HierStrucID, nam.StringText AS Nome,
+                       MAX(a.Livello) OVER (PARTITION BY a.HierUnitID) AS Livello
+                FROM albero a
+                INNER JOIN datastore.dbo.hierarchy_unit hu ON a.HierUnitID = hu.HierUnitID
+                INNER JOIN datastore.dbo.string_table nam ON hu.NameID = nam.StringNumberID
+            ),
+            Course AS (
+                SELECT cou.ObjectNumber CorsaNum, nam.StringText CorsaNome,
+                       lvl.HierStrucID, lvl.Nome, lvl.Livello
+                FROM datastore.dbo.dining_course cou
+                INNER JOIN datastore.dbo.string_table nam ON cou.NameID=nam.StringNumberID
+                LEFT JOIN Livelli lvl ON cou.HierStrucID = lvl.HierStrucID
+            ),
+            CuorsePriceMax AS (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY CorsaNum ORDER BY Livello DESC) AS rn
+                FROM Course
+            )
+            SELECT CorsaNum, CorsaNome FROM CuorsePriceMax WHERE rn=1";
+
+        public CorseRepository(IDbConnectionFactory dbFactory)
+        {
+            _dbFactory = dbFactory;
+        }
+
+        // Firma corretta che rispetta l'interfaccia!
+        public async Task<List<NomiCorse>> OttieniNomiCorseAsync()
+        {
+            var risultati = new List<NomiCorse>();
+
+            // La factory ci dice che DB stiamo usando, scegliamo la query corretta
+            string query = _dbFactory.TipoDB == 2 ? _queryMySql : _querySqlServer;
+
+            // Usiamo DbConnection per avere accesso ai metodi asincroni
+            using (DbConnection connection = _dbFactory.CreateConnection())
+            {
+                using (DbCommand command = connection.CreateCommand())
+                {
+                    command.CommandText = query;
+
+                    // Ora possiamo usare ExecuteReaderAsync() senza problemi
+                    using (DbDataReader reader = await command.ExecuteReaderAsync())
                     {
                         while (await reader.ReadAsync())
                         {
@@ -935,7 +1184,6 @@ namespace CourseMng
         private bool _extensionEnbled = true;
         private int _tipoDB = 0;
         private bool _menu_enable;
-        //private bool _menu_withCourse;
         private int _actual_Rvc;
         private OrderDeviceCache _device;
         private string _connStringMySql = "Server=127.0.0.1;Database=datastore;";
@@ -944,9 +1192,7 @@ namespace CourseMng
         private string _connString = "";
         private HashSet<int> _CorseMarciate;
         private HashSet<int> _CorseUsate;
-        //private OpsExtensibilityApplication _app;
-        //private List<NomiCorse> _corse;
-
+        private IDbConnectionFactory _dbFactory;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _processedPrints =
                 new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
 
@@ -986,7 +1232,7 @@ namespace CourseMng
 
             if (OpsContext.PropHierStrucID != codreq)
             {
-                OpsContext.ShowMessage("Codice non valido, extension disabilitata");
+                OpsContext.ShowMessage(messageSow("Codice non valido, extension disabilitata"));
                 myLog.Warn("Codice non valido, extension disabilitata");
                 _menu_enable = false;
                 _coursemng_enable = false;
@@ -999,8 +1245,8 @@ namespace CourseMng
 
             if (_config.VerbosityDisplay > 0)
             {
-                OpsContext.ShowMessage("OpsInitEvent");
-                OpsContext.ShowMessage(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString()));
+                OpsContext.ShowMessage(messageSow("OpsInitEvent"));
+                OpsContext.ShowMessage(messageSow(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString())));
             }
             myLog.Debug("OpsInitEvent");
             myLog.Debug(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString()));
@@ -1044,26 +1290,30 @@ namespace CourseMng
                         else //if (_tipoDB == 1)
                         {
                             // Errore Oracle non supportato
-                            OpsContext.ShowMessage("Database non supportato Extension disabilitata ");
+                            OpsContext.ShowMessage(messageSow("Database non supportato Extension disabilitata "));
                             myLog.Error("30F2188A - Database non supportato Extension disabilitata ");
                             _extensionEnbled = false;
                         }
                     }
                 }
             }
+            if (_extensionEnbled)
+            {
+                _dbFactory = new DbConnectionFactory(_tipoDB, _connString);
+            }
             return EventProcessingInstruction.Continue;
         }
 
         private EventProcessingInstruction GestFinalTenderEvent(object sender, OpsTmedEventArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("OpsFinalTenderEvent");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("OpsFinalTenderEvent"));
             myLog.Debug("OpsFinalTenderEvent");
             return EventProcessingInstruction.Continue;
         }
 
         private EventProcessingInstruction GestPrinterDataEvent(object sender, OpsPrinterDataArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("OpsPrinterDataEvent");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("OpsPrinterDataEvent"));
             myLog.Debug("OpsPrinterDataEvent");
             return EventProcessingInstruction.Continue;
         }
@@ -1151,13 +1401,14 @@ namespace CourseMng
             catch (Exception ex)
             {
                 {
-                    OpsContext.ShowMessage("Errore Preparazione Articoli Comanda");
-                    OpsContext.ShowMessage(ex.Message);
+                    OpsContext.ShowMessage(messageSow("Errore Preparazione Articoli Comanda"));
+                    OpsContext.ShowMessage(messageSow(ex.Message));
                     myLog.Error("551BA846 - Errore Preparazione Articoli Comanda", ex);
                 }
             }
             return ListaArticoli;
         }
+
         private DatiComanda PreparaDatiComadaTest()
         {
             DatiComanda dati = new DatiComanda();
@@ -1246,61 +1497,28 @@ namespace CourseMng
             catch (Exception ex)
             {
                 {
-                    OpsContext.ShowMessage("Errore Preparazione Articoli Comanda");
-                    OpsContext.ShowMessage(ex.Message);
+                    OpsContext.ShowMessage(messageSow("Errore Preparazione Articoli Comanda"));
+                    OpsContext.ShowMessage(messageSow(ex.Message));
                     myLog.Error("551BA846 - Errore Preparazione Articoli Comanda", ex);
                 }
             }
             return ListaArticoli;
         }
 
-        [ExtensibilityMethod]
-        public void TestComanda(object OrderDevice)
+        private string messageSow(string origMessage)
         {
-            if ((_device is null || _actual_Rvc != OpsContext.RvcID))
-            {
-                try
-                {
-                    _device = new OrderDeviceCache(_connString);
-                    _device.Load(_tipoDB, OpsContext.RvcID, OpsContext.WorkstationID);
-                }
-                catch (Exception ex)
-                {
-                    OpsContext.ShowMessage("Errore Lettura Device");
-                    OpsContext.ShowMessage(ex.Message);
-                    myLog.Error("FDC6E8AF - Errore Lettura Articoli", ex);
-                }
-            }
-            myLog.Debug($"Inzio Stampa Comanda device {OrderDevice}");
-            DatiComanda datiComanda = PreparaDatiComadaTest();
-            List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
-            List<MenuItemPrint>  ListaArticoli = PreparaListaArticoliComandaTest(corse);
-            List<byte> payload = new List<byte>();
-            byte[] data = payload.ToArray();
-            payload = Comanda_OD_100_00(Convert.ToInt32(OrderDevice), datiComanda, ListaArticoli);
-            OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(Convert.ToInt32(OrderDevice));
-            stampaComanda(payload.ToArray(), device, true);
-            myLog.Debug($"Fine Stampa Comanda device {OrderDevice}");
+            return $"CourseMng:\r\n{origMessage}";
         }
 
-        [ExtensibilityMethod]
-        public void Status(Object var)
-        {
-            if (!_extensionEnbled) OpsContext.ShowMessage("Estensione Disabilitata");
-            else
-            { OpsContext.ShowMessage($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nGestione Corse abilitata {_coursemng_enable}\nGestione Menu abilitata {_menu_enable}"); }
-        }
-
-        [ExtensibilityMethod]
-        public void TestStampanti()
+        /*[ExtensibilityMethod] public void TestStampanti()
         { 
         
-        }
+        }*/
 
         private EventProcessingInstruction GestOpsCustomOrderDeviceEventArgs(object sender, OpsCustomOrderDeviceEventArgs args)
         {
 
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("OpsCustomOrderDeviceEventArgs");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("OpsCustomOrderDeviceEventArgs"));
             myLog.Debug("OpsCustomOrderDeviceEventArgs");
             if (!_extensionEnbled || !_coursemng_enable)
             {
@@ -1326,6 +1544,7 @@ namespace CourseMng
             _processedPrints[cacheKey] = DateTime.Now;
 
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
+            //List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
             List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
 
             DatiComanda datiComanda = PreparaDatiComanda(_CorseMarciate.Max());
@@ -1392,7 +1611,7 @@ namespace CourseMng
 
                         using (NetworkStream stream = client.GetStream())
                         {
-                            //OpsContext.ShowMessage(data.ToString());
+                            //OpsContext.ShowMessage(messageSow(data.ToString()));
                             stream.Write(data, 0, data.Length);
                             stream.Flush();
 
@@ -1435,13 +1654,13 @@ namespace CourseMng
                     if (!completato)
                     {
                         // Il timeout è scaduto: la stampante è lenta, irraggiungibile o spenta
-                        OpsContext.ShowMessage($"Errore di rete durante la connessione alla stampante: {ip}:{porta}");
+                        OpsContext.ShowMessage(messageSow($"Errore di rete durante la connessione alla stampante: {ip}:{porta}"));
                         myLog.Error($"F2AA9C53 - Errore stampante: {ip}:{porta}");
                         return false;
                     }
                     else
                     {
-                        if (test) OpsContext.ShowMessage($"Connessione stampante: {ip}:{porta} OK");
+                        if (test) OpsContext.ShowMessage(messageSow($"Connessione stampante: {ip}:{porta} OK"));
                     }
                     // Se arriviamo qui, il task è completato. Verifichiamo se siamo connessi.
                     return client.Connected;
@@ -1743,7 +1962,7 @@ namespace CourseMng
             return payload;
         }
                    
-        public async Task<List<NomiCorse>> LeggiNomiCorse()
+        /*public async Task<List<NomiCorse>> LeggiNomiCorse()
         {
             ICorseRepository repository;
 
@@ -1755,7 +1974,7 @@ namespace CourseMng
             {
                 repository = new CorseRepositorySqlServer(_connString);
             }
-
+        
             // Da questo punto in poi, non ti interessa più quale db stai usando!
             try
             {
@@ -1768,8 +1987,25 @@ namespace CourseMng
                 Console.WriteLine($"Errore: {ex.Message}");
                 return new List<NomiCorse>();
             }
+        }*/
+
+        public async Task<List<NomiCorse>> LeggiNomiCorse()
+        {
+            // _dbFactory è già stato istanziato in GestInitEvent
+            ICorseRepository repository = new CorseRepository(_dbFactory);
+
+            try
+            {
+                List<NomiCorse> corse = await repository.OttieniNomiCorseAsync();
+                return corse;
+            }
+            catch (Exception ex)
+            {
+                myLog.Error("Errore lettura corse", ex);
+                return new List<NomiCorse>();
+            }
         }
-        
+
         private List<MenuItemPrint> PreparaListaArticoliMarcia(OpsCustomOrderDeviceEventArgs args, List<NomiCorse> corse, int corsacorr)
         {
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
@@ -1853,28 +2089,28 @@ namespace CourseMng
 
         private EventProcessingInstruction SelectedItemCompleteQuery(object sender, OpsSelectedItemCompleteQueryEventArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("SelectedItemComplete");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("SelectedItemComplete"));
             myLog.Debug("SelectedItemComplete");
             return EventProcessingInstruction.Continue;
         }
 
         private EventProcessingInstruction ItemSelected(object sender, OpsItemSelectedEventArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("SelectedItem");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("SelectedItem"));
             myLog.Debug("SelectedItem");
             return EventProcessingInstruction.Continue;
         }
 
         private EventProcessingInstruction GestisciPreviewMI(object sender, OpsMenuItemEventArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("OpsMiPreviewEvent");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("OpsMiPreviewEvent"));
             myLog.Debug("OpsMiPreviewEvent");
             return EventProcessingInstruction.Continue;
         }
 
         private EventProcessingInstruction GesioneSignIn(object sender, OpsSignInPreviewEventArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage("EventSignIn");
+            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("EventSignIn"));
             myLog.Debug("EventSignIn");
             
             return EventProcessingInstruction.Continue;
@@ -1905,13 +2141,13 @@ namespace CourseMng
             {
                 try
                 {
-                    _device = new OrderDeviceCache(_connString);
-                    _device.Load(_tipoDB, OpsContext.RvcID, OpsContext.WorkstationID);
+                    _device = new OrderDeviceCache(_dbFactory);
+                    _device.Load(OpsContext.RvcID, OpsContext.WorkstationID);
                 }
                 catch (Exception ex)
                 {
-                    OpsContext.ShowMessage("Errore Lettura Device");
-                    OpsContext.ShowMessage(ex.Message);
+                    OpsContext.ShowMessage(messageSow("Errore Lettura Device"));
+                    OpsContext.ShowMessage(messageSow(ex.Message));
                     myLog.Error("FDC7F8AF - Errore Lettura Articoli", ex);
                 }
             }
@@ -1922,12 +2158,12 @@ namespace CourseMng
             {
                 
                 _CorseMarciate.Add(1);
-                if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage("Cerca Marcia");
+                if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(messageSow("Cerca Marcia"));
                 foreach (CheckDetailItem riga in OpsContext.CheckDetail)
                 {
                     if (riga is MenuItemDetail articolo)
                     {
-                        if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(string.Format("Articolo {0}", riga.Name));
+                        if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(messageSow(string.Format("Articolo {0}", riga.Name)));
                         if (articolo.MiObjNum == _config.Marcia)
                         {
                             _CorseMarciate.Add(articolo.KdsCourseNum);
@@ -1954,7 +2190,7 @@ namespace CourseMng
                 }
                 catch (Exception ex)
                 {
-                    OpsContext.ShowMessage("Errore apertura conto: " + ex.Message);
+                    OpsContext.ShowMessage(messageSow("Errore apertura conto: " + ex.Message));
                     myLog.Error("A4C31445 - Errore apertura conto", ex);
                 }
             }
@@ -2029,14 +2265,14 @@ namespace CourseMng
                             }
                             catch (Exception ex)
                             {
-                                OpsContext.ShowMessage("Errore!! ");
-                                myLog.Error("Errore aggiunta articolo", ex);
+                                OpsContext.ShowMessage(messageSow("Errore!! "));
+                                myLog.Error("9B426026 Errore aggiunta articolo", ex);
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        OpsContext.ShowMessage("Errore2!! ");
+                        OpsContext.ShowMessage(messageSow("Errore2!! "));
                         myLog.Error("3A347EE0 - Errore aggiunta articolo", ex);
                     }
                 if (!args.MiClass.OptionBits.CheckBit(2) && _menu_enable && _extensionEnbled)
@@ -2058,14 +2294,14 @@ namespace CourseMng
                     }
                     catch (Exception ex)
                     {
-                        OpsContext.ShowMessage("Errore3!! ");
+                        OpsContext.ShowMessage(messageSow("Errore3!! "));
                         myLog.Error("CFEDA03B - Errore aggiunta articolo", ex);
                     }
 
             }
             else
             {
-                OpsContext.ShowMessage("Estensione Disabilitata");
+                OpsContext.ShowMessage(messageSow("Estensione Disabilitata"));
                 myLog.Warn("2F336424 - Estensione Disabilitata");
             }
             return EventProcessingInstruction.Continue;
@@ -2231,13 +2467,13 @@ namespace CourseMng
                 string valore = LeggiLaMiaVariabile("CorsaCorrente");
                 if (_config.VerbosityDisplay > 3)
                 {
-                    OpsContext.ShowMessage(string.Format("Corsa corrente è {0}", valore));
+                    OpsContext.ShowMessage(messageSow(string.Format("Corsa corrente è {0}", valore)));
                     //myLog.Debug("Corsa corrente è {0}");
                 }
             }
             else
             {
-                OpsContext.ShowMessage("Devi prima aprire un check!");
+                OpsContext.ShowMessage(messageSow("Devi prima aprire un check!"));
             }
         }
 
@@ -2246,7 +2482,7 @@ namespace CourseMng
         {
             if (!_extensionEnbled || !_coursemng_enable)
             {
-                OpsContext.ShowMessage("Estensione Non abilitata");
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
                 myLog.Warn("9C9C306D - Estensione Non abilitata");
                 return;
             }
@@ -2317,15 +2553,14 @@ namespace CourseMng
             }
             else
             {
-                OpsContext.ShowMessage("Apri prima un conto!");
+                OpsContext.ShowMessage(messageSow("Apri prima un conto!"));
             }
         }
-
 
         [ExtensibilityMethod]
         public void VisCode()
         {
-            OpsContext.ShowMessage(OpsContext.PropHierStrucID.ToString());
+            OpsContext.ShowMessage(messageSow(OpsContext.PropHierStrucID.ToString()));
         }
 
         [ExtensibilityMethod]
@@ -2333,7 +2568,7 @@ namespace CourseMng
         {
             if (!_extensionEnbled || !_coursemng_enable)
             {
-                OpsContext.ShowMessage("Estensione Non abilitata");
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
                 myLog.Warn("C63AF98A - Estensione Non abilitata");
                 return;
             }
@@ -2371,11 +2606,41 @@ namespace CourseMng
         }
 
         [ExtensibilityMethod]
+        public void TestComanda(object OrderDevice)
+        {
+            if ((_device is null || _actual_Rvc != OpsContext.RvcID))
+            {
+                try
+                {
+                    _device = new OrderDeviceCache(_dbFactory);
+                    _device.Load(OpsContext.RvcID, OpsContext.WorkstationID);
+                }
+                catch (Exception ex)
+                {
+                    OpsContext.ShowMessage(messageSow("Errore Lettura Device"));
+                    OpsContext.ShowMessage(messageSow(ex.Message));
+                    myLog.Error("FDC6E8AF - Errore Lettura Articoli", ex);
+                }
+            }
+            myLog.Debug($"Inzio Stampa Comanda device {OrderDevice}");
+            DatiComanda datiComanda = PreparaDatiComadaTest();
+            //List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
+            List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
+            List<MenuItemPrint> ListaArticoli = PreparaListaArticoliComandaTest(corse);
+            List<byte> payload = new List<byte>();
+            byte[] data = payload.ToArray();
+            payload = Comanda_OD_100_00(Convert.ToInt32(OrderDevice), datiComanda, ListaArticoli);
+            OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(Convert.ToInt32(OrderDevice));
+            stampaComanda(payload.ToArray(), device, true);
+            myLog.Debug($"Fine Stampa Comanda device {OrderDevice}");
+        }
+
+        [ExtensibilityMethod]
         public void Marcia(object numCorsa)
         {
             if (!_extensionEnbled || !_coursemng_enable)
             {
-                OpsContext.ShowMessage("Estensione Non abilitata");
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
                 myLog.Warn("E409237A - Estensione Non abilitata");
                 return;
             }
@@ -2397,7 +2662,7 @@ namespace CourseMng
 
                 if (_config.VerbosityDisplay > 2)
                 {
-                    OpsContext.ShowMessage(string.Format("Marcia {0}", numCorsa));
+                    OpsContext.ShowMessage(messageSow(string.Format("Marcia {0}", numCorsa)));
                 }
                 myLog.Debug("Marcia {0}");
 
@@ -2408,14 +2673,14 @@ namespace CourseMng
 
                 if (_config.VerbosityDisplay > 1)
                 {
-                    OpsContext.ShowMessage("Send Order");
+                    OpsContext.ShowMessage(messageSow("Send Order"));
                 }
                 myLog.Debug("Send Order");
                 OpsContext.ProcessCommand(cmdSend);
             }
             catch (Exception ex)
             {
-                OpsContext.ShowMessage("Errore Marcia");
+                OpsContext.ShowMessage(messageSow("Errore Marcia"));
                 myLog.Error("EAA72F2E - Errore Marcia", ex);
             }
             /*
@@ -2431,42 +2696,13 @@ namespace CourseMng
             */
         }
 
-        /*public int ValorePrintClass(OpsContext opsContext, int targetCourse)
+        [ExtensibilityMethod]
+        public void Status()
         {
-            List<MenuItemDetail> results = new List<MenuItemDetail>();
-            int[] devpres = new int[] { 0, 0, 0, 0 };
-            int totpres = 0;
-            for (int i = 0; i < opsContext.CheckDetail.Count; i++)
-            {
-                if (opsContext.CheckDetail.ItemAt(i) is MenuItemDetail item)
-                {
-                    if (item.KdsCourseNum == targetCourse && item.FamGrpObjNum != _config.FamilyMarcia)
-                    {
-                        for (int x = 0; x <=3; x++)
-                        {
-                            if (_config.OrderDeviceMarcia[x] > 0) //Se il valore = 0 l'order device non è utilizzata
-                            {
-                                char pos = item.PrintOptionBits[7 + _config.OrderDeviceMarcia[x]];
-                                if (pos == '1')
-                                {
-                                    devpres[x] = 1;
-                                }
-                            }
-                            if (_config.Develop) OpsContext.ShowMessage(string.Format("Posizione ", x, " :", pos));
-                        }
-                    }
-                }
-            }
-            for (int x = 0; x <= 3; x++)
-            {
-                if (devpres[x] == 1)
-                {
-                    totpres += (1 << (4 - (x + 1)));
-                }
-            }
-            return _config.OverPrintClass + totpres;
-        }*/
-        
+            if (!_extensionEnbled) OpsContext.ShowMessage(messageSow("Estensione Disabilitata"));
+            else
+            { OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nGestione Corse abilitata {_coursemng_enable}\nGestione Menu abilitata {_menu_enable}")); }
+        }
         public class ApplicationFactory : IExtensibilityAssemblyFactory
         {
             public ExtensibilityAssemblyBase Create(IExecutionContext context)

@@ -1508,7 +1508,6 @@ namespace CourseMng
         List<byte> Comanda_OD_100_00(int ODIndex, DatiComanda datiComanda, List<MenuItemPrint> listaArticoli)
         {
             List<byte> payload = new List<byte>();
-            string riga = "";
 
             // Inizializza stampante
             payload.AddRange(EscPos.Initialize);
@@ -1757,7 +1756,6 @@ namespace CourseMng
         {
 
             List<byte> payload = new List<byte>();
-            string riga = "";
 
             // Inizializza stampante
             payload.AddRange(EscPos.Initialize);

@@ -72,9 +72,8 @@
     <Reference Include="MySqlConnector, Version=2.0.0.0, Culture=neutral, PublicKeyToken=d33d3e53aa5f8c92, processorArchitecture=MSIL">
       <HintPath>packages\MySqlConnector.2.6.2\lib\net471\MySqlConnector.dll</HintPath>
     </Reference>
-    <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Reference\Newtonsoft.Json.dll</HintPath>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>..\..\Micros\Simphony\WebServer\wwwroot\EGateway\Handlers\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="Ops">
       <HintPath>..\..\Micros\Simphony\WebServer\wwwroot\EGateway\Handlers\Ops.dll</HintPath>

@@ -572,21 +572,6 @@ namespace CourseMng
             public string TypeOD { get; set; }
         }
     }
-    
-    /*public static class ConfigLoader
-    {
-        public static string Load()
-        {
-            string folder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            string jsonPath = Path.Combine(folder, "config.json");
-
-            if (!File.Exists(jsonPath))
-                throw new FileNotFoundException("File config.json non trovato", jsonPath);
-            string json = File.ReadAllText(jsonPath);
-            return json;
-        }
-    }
-    */
 
     [Export(typeof(OpsExtensibilityApplication))]
 
@@ -692,162 +677,6 @@ namespace CourseMng
     {
         Task<List<NomiCorse>> OttieniNomiCorseAsync();
     }
-
-    /*public class CorseRepositoryMySql : ICorseRepository
-    {
-        private readonly string _connectionString;
-
-        public CorseRepositoryMySql(string connectionString)
-        {
-            _connectionString = connectionString;
-        }
-
-        public async Task<List<NomiCorse>> OttieniNomiCorseAsync()
-        {
-            var risultati = new List<NomiCorse>();
-
-            string query = @"
-            WITH RECURSIVE albero AS
-            (
-                SELECT hs.HierStrucID, hs.HierUnitID, 0 AS Livello
-                FROM datastore.hierarchy_structure hs
-                WHERE hs.ParentHierStrucID IS NULL
-
-                UNION ALL
-
-                SELECT hs.HierStrucID, hs.HierUnitID, a.Livello + 1 AS Livello
-                FROM datastore.hierarchy_structure hs
-                INNER JOIN albero a 
-                    ON hs.ParentHierStrucID = a.HierStrucID
-            ),
-            Livelli AS
-            (
-                SELECT 
-                    a.HierStrucID,
-                    nam.StringText AS Nome,
-                    MAX(a.Livello) OVER (PARTITION BY a.HierUnitID) AS Livello
-                FROM albero a
-                INNER JOIN datastore.hierarchy_unit hu 
-                    ON a.HierUnitID = hu.HierUnitID
-                INNER JOIN datastore.string_table nam 
-                    ON hu.NameID = nam.StringNumberID
-            ),
-            Course AS
-            (
-                SELECT cou.ObjectNumber CorsaNum,
-                       nam.StringText CorsaNome,
-                       lvl.HierStrucID,
-                       lvl.Nome,
-                       lvl.Livello
-                FROM datastore.dining_course cou
-                INNER JOIN datastore.string_table nam ON cou.NameID=nam.StringNumberID
-                LEFT JOIN Livelli lvl 
-                    ON cou.HierStrucID = lvl.HierStrucID
-            ),
-            CuorsePriceMax AS
-            (
-                SELECT *,
-                       ROW_NUMBER() OVER
-                       (
-                           PARTITION BY CorsaNum
-                           ORDER BY Livello DESC
-                       ) AS rn
-                FROM Course
-            )
-            SELECT CorsaNum, CorsaNome
-            FROM CuorsePriceMax
-            WHERE rn=1";
-
-            using (var connection = new MySqlConnection(_connectionString))
-            {
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    await connection.OpenAsync();
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            risultati.Add(new NomiCorse
-                            {
-                                CorsaNum = Convert.ToInt32(reader["CorsaNum"]),
-                                CorsaNome = reader["CorsaNome"] != DBNull.Value ? reader["CorsaNome"].ToString() : null
-                            });
-                        }
-                    }
-                }
-            }
-            return risultati;
-        }
-    }
-    */
-
-    /*public class CorseRepositorySqlServer : ICorseRepository
-    {
-        private readonly string _connectionString;
-
-        public CorseRepositorySqlServer(string connectionString)
-        {
-            _connectionString = connectionString;
-        }
-
-        public async Task<List<NomiCorse>> OttieniNomiCorseAsync()
-        {
-            var risultati = new List<NomiCorse>();
-
-            // Query SQL Server (SENZA RECURSIVE)
-            string query = @"
-            WITH albero AS
-            (
-                SELECT hs.HierStrucID, hs.HierUnitID, 0 AS Livello
-                FROM datastore.dbo.hierarchy_structure hs
-                WHERE hs.ParentHierStrucID IS NULL
-                UNION ALL
-                SELECT hs.HierStrucID, hs.HierUnitID, a.Livello + 1 AS Livello
-                FROM datastore.dbo.hierarchy_structure hs
-                INNER JOIN albero a ON hs.ParentHierStrucID = a.HierStrucID
-            ),
-            Livelli AS (
-                SELECT a.HierStrucID, nam.StringText AS Nome,
-                       MAX(a.Livello) OVER (PARTITION BY a.HierUnitID) AS Livello
-                FROM albero a
-                INNER JOIN datastore.dbo.hierarchy_unit hu ON a.HierUnitID = hu.HierUnitID
-                INNER JOIN datastore.dbo.string_table nam ON hu.NameID = nam.StringNumberID
-            ),
-            Course AS (
-                SELECT cou.ObjectNumber CorsaNum, nam.StringText CorsaNome,
-                       lvl.HierStrucID, lvl.Nome, lvl.Livello
-                FROM datastore.dbo.dining_course cou
-                INNER JOIN datastore.dbo.string_table nam ON cou.NameID=nam.StringNumberID
-                LEFT JOIN Livelli lvl ON cou.HierStrucID = lvl.HierStrucID
-            ),
-            CuorsePriceMax AS (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY CorsaNum ORDER BY Livello DESC) AS rn
-                FROM Course
-            )
-            SELECT CorsaNum, CorsaNome FROM CuorsePriceMax WHERE rn=1";
-
-            using (var connection = new SqlConnection(_connectionString))
-            {
-                using (var command = new SqlCommand(query, connection))
-                {
-                    await connection.OpenAsync();
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            risultati.Add(new NomiCorse
-                            {
-                                CorsaNum = Convert.ToInt32(reader["CorsaNum"]),
-                                CorsaNome = reader["CorsaNome"] != DBNull.Value ? reader["CorsaNome"].ToString() : null
-                            });
-                        }
-                    }
-                }
-            }
-            return risultati;
-        }
-    }
-    */
 
     public class CorseRepository : ICorseRepository
     {
@@ -1510,11 +1339,6 @@ namespace CourseMng
             return $"CourseMng:\r\n{origMessage}";
         }
 
-        /*[ExtensibilityMethod] public void TestStampanti()
-        { 
-        
-        }*/
-
         private EventProcessingInstruction GestOpsCustomOrderDeviceEventArgs(object sender, OpsCustomOrderDeviceEventArgs args)
         {
 
@@ -1690,38 +1514,67 @@ namespace CourseMng
             payload.AddRange(EscPos.Initialize);
             payload.AddRange(EscPos.AlignCenter);
 
+            //Header
+            payload.AddRange(Header_000(ODIndex, datiComanda));
+
+            // Corpo
+            payload.AddRange(Corpo_000(datiComanda, listaArticoli));
+
+            //Footer
+            payload.AddRange(Footer_000(datiComanda ));
+
+            // Taglio carta
+            payload.AddRange(EscPos.LineFeed3);
+            payload.AddRange(EscPos.PartCutPaper);
+            //payload.AddRange(EscPos.LineFeed);
+
+            return payload;
+
+        }
+
+        List<byte> Header_000(int ODIndex, DatiComanda datiComanda)
+        {
+            List<byte> intestazione = new List<byte>();
+            string riga = "";
 
             // Nome OrderDevice -- testo normale --
-            payload.AddRange(EscPos.TextNormal);
+            intestazione.AddRange(EscPos.TextNormal);
             riga = string.Format("=== {0} ===\r\n\r\n", _device.GetDevice(ODIndex).NomeOrderDevice);
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
 
             //Revenue Center -- testo doppio --
-            payload.AddRange(EscPos.TextDoubleSize);
+            intestazione.AddRange(EscPos.TextDoubleSize);
             riga = datiComanda.Rvc_name;
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
 
             // Tavolo -- testo triplo, grassetto e centrato --
-            payload.AddRange(EscPos.TextTripleSize);
-            payload.AddRange(EscPos.TextBoldOn);
+            intestazione.AddRange(EscPos.TextTripleSize);
+            intestazione.AddRange(EscPos.TextBoldOn);
             if (datiComanda.Tavolo != "") riga = string.Format("\r\nTav. {0}\r\n", datiComanda.Tavolo);
             else riga = string.Format("\r\nCheck {0} \r\n", datiComanda.CheckNumber);
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
 
             //ID Conto -- testo doppio
-            payload.AddRange(EscPos.TextDoubleSize);
+            intestazione.AddRange(EscPos.TextDoubleSize);
             if (datiComanda.CheckID != "")
             {
                 riga = string.Format("{0}\r\n", datiComanda.CheckID);
-                payload.AddRange(Encoding.ASCII.GetBytes(riga));
+                intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
             }
 
             // Riga -- testo doppio centrato --
-            payload.AddRange(EscPos.TextDoubleSize);
-            payload.AddRange(EscPos.TextBoldOff);
+            intestazione.AddRange(EscPos.TextDoubleSize);
+            intestazione.AddRange(EscPos.TextBoldOff);
             riga = string.Format("-------------------\r\n");
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
 
+            return intestazione;
+        }
+
+        List<byte> Corpo_000(DatiComanda datiComanda, List<MenuItemPrint> listaArticoli)
+        {
+            List<byte> corpo = new List<byte>();
+            string riga = "";
 
             var raggruppatiPerCorsa = listaArticoli.GroupBy(m => m.corsa);
             int corsacorr = 0;
@@ -1733,28 +1586,28 @@ namespace CourseMng
                 if (numcorsa > corsacorr)
                 {
                     // Corsa -- testo grande, grassetto, inverito e centrato --
-                    payload.AddRange(EscPos.AlignCenter);
-                    
+                    corpo.AddRange(EscPos.AlignCenter);
+
                     if (numcorsa == datiComanda.MarciaCorrente)
                     {
-                        payload.AddRange(EscPos.TextNormal);
-                        payload.AddRange(EscPos.NoColorInv);
+                        corpo.AddRange(EscPos.TextNormal);
+                        corpo.AddRange(EscPos.NoColorInv);
                         riga = string.Format("\r\n{0}\r\n\r\n", articolo.corsa);
                     }
                     else
                     {
-                        payload.AddRange(EscPos.TextDoubleHeight);
-                        payload.AddRange(EscPos.ColorInv);
+                        corpo.AddRange(EscPos.TextDoubleHeight);
+                        corpo.AddRange(EscPos.ColorInv);
                         riga = string.Format("\r\nSegue {0}\r\n\r\n", articolo.corsa);
                     }
-                    payload.AddRange(Encoding.ASCII.GetBytes(riga));
+                    corpo.AddRange(Encoding.ASCII.GetBytes(riga));
                     corsacorr = numcorsa;
                 }
 
                 // Articolo -- testo doppio  -- 
-                payload.AddRange(EscPos.AlignLeft);
-                payload.AddRange(EscPos.TextDoubleSize);
-                payload.AddRange(EscPos.NoColorInv);
+                corpo.AddRange(EscPos.AlignLeft);
+                corpo.AddRange(EscPos.TextDoubleSize);
+                corpo.AddRange(EscPos.NoColorInv);
                 string artprint = articolo.nome;
                 string refprint = articolo.reference;
                 if (articolo.nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.nome.Substring(0, _config.LunghNomeArticoli - 1));
@@ -1779,12 +1632,12 @@ namespace CourseMng
                     art.Append("\r\n");
                 }
                 //payload.AddRange(EscPos.TextDoubleHeight);
-                payload.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
+                corpo.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
                 foreach (CondimentPrint condimento in articolo.condiments)
                 {
                     // Condimento -- testo doppia altezza sottolineato
-                    payload.AddRange(EscPos.AlignLeft);
-                    payload.AddRange(EscPos.TextDoubleHeight);
+                    corpo.AddRange(EscPos.AlignLeft);
+                    corpo.AddRange(EscPos.TextDoubleHeight);
                     StringBuilder cond = new StringBuilder();
                     cond.Append("     ");
                     //payload.AddRange(EscPos.Underline2);
@@ -1806,30 +1659,98 @@ namespace CourseMng
                         cond.Append("     ");
                         cond.Append(condimento.reference);
                     }
-                    payload.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
-                    payload.AddRange(EscPos.NoUnderline);
-                    payload.AddRange(Encoding.ASCII.GetBytes("\r\n"));
+                    corpo.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
+                    corpo.AddRange(EscPos.NoUnderline);
+                    corpo.AddRange(Encoding.ASCII.GetBytes("\r\n"));
+                }
+            }
+            return corpo;
+        }
+
+        List<byte> Footer_000(DatiComanda datiComanda)
+        {
+            List<byte> footer = new List<byte>();
+            string riga = "";
+
+            footer.AddRange(EscPos.AlignCenter);
+            footer.AddRange(EscPos.TextDoubleSize);
+            footer.AddRange(EscPos.NoColorInv);
+            riga = string.Format("-------------------\r\n");
+            footer.AddRange(Encoding.ASCII.GetBytes(riga));
+
+            footer.AddRange(EscPos.TextNormal);
+            footer.AddRange(EscPos.AlignLeft);
+            riga = string.Format("{0} -- {1}\r\n\r\n", datiComanda.Utente, DateTime.Now.ToString());
+            footer.AddRange(Encoding.ASCII.GetBytes(riga));
+
+            return footer; 
+        }
+
+        List<byte> Marcia_000(List<MenuItemPrint> listaArticoli)
+        {
+            List<byte> marcia = new List<byte>();
+            string riga = "";
+
+            // Marcia -- testo doppio  -- 
+            int numcorsa = listaArticoli[0].numcorsa;
+            marcia.AddRange(EscPos.AlignCenter);
+            marcia.AddRange(EscPos.TextTripleSize);
+            marcia.AddRange(EscPos.NoColorInv);
+            riga = string.Format(string.Format("\r\n{0} {1}\r\n", _config.Lbl_Marcia, numcorsa));
+            marcia.AddRange(Encoding.ASCII.GetBytes(riga));
+
+            foreach (MenuItemPrint articolo in listaArticoli)
+            {
+
+                // Articolo -- testo doppio  -- 
+                marcia.AddRange(EscPos.AlignLeft);
+                marcia.AddRange(EscPos.TextDoubleSize);
+                marcia.AddRange(EscPos.NoColorInv);
+                string artprint = articolo.nome;
+                string refprint = articolo.reference;
+                if (articolo.nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.nome.Substring(0, _config.LunghNomeArticoli - 1));
+                if (articolo.reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.reference.Substring(0, _config.LunghNomeArticoli - 1));
+                StringBuilder art = new StringBuilder();
+                art.Append(articolo.quant);
+                art.Append(" ");
+                if ((articolo.nome == "" || articolo.nome.StartsWith("#")) && articolo.reference != "") art.Append(refprint);
+                else art.Append(artprint);
+                art.Append("\r\n");
+                if (articolo.nome != "" && articolo.reference != "")
+                {
+                    art.Append("  ");
+                    art.Append(articolo.reference);
+                    art.Append("\r\n");
+                }
+                marcia.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
+                foreach (CondimentPrint condimento in articolo.condiments)
+                {
+                    // Condimento -- testo doppia altezza sottolineato
+                    marcia.AddRange(EscPos.AlignLeft);
+                    marcia.AddRange(EscPos.TextDoubleHeight);
+                    StringBuilder cond = new StringBuilder();
+                    cond.Append("     ");
+                    if (condimento.quant != "1")
+                    {
+                        cond.Append(condimento.quant);
+                        cond.Append(" ");
+                    }
+
+                    if ((condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "") cond.Append(condimento.reference);
+                    else cond.Append(condimento.nome);
+
+                    if (!(condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "")
+                    {
+                        cond.Append("     ");
+                        cond.Append(condimento.reference);
+                    }
+                    marcia.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
+                    marcia.AddRange(EscPos.NoUnderline);
+                    marcia.AddRange(Encoding.ASCII.GetBytes("\r\n"));
                 }
             }
 
-
-            payload.AddRange(EscPos.AlignCenter);
-            payload.AddRange(EscPos.TextDoubleSize);
-            payload.AddRange(EscPos.NoColorInv);
-            riga = string.Format("-------------------\r\n");
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            payload.AddRange(EscPos.TextNormal);
-            payload.AddRange(EscPos.AlignLeft);
-            riga = string.Format("{0} -- {1}\r\n\r\n", datiComanda.Utente,DateTime.Now.ToString());
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            // Taglio carta
-            payload.AddRange(EscPos.LineFeed3);
-            payload.AddRange(EscPos.PartCutPaper);
-            //payload.AddRange(EscPos.LineFeed);
-
-            return payload;
+            return marcia;
         }
 
         List<byte> Comanda_MA_100_00(int ODIndex, DatiComanda datiComanda, List<MenuItemPrint> listaArticoli)
@@ -1842,153 +1763,23 @@ namespace CourseMng
             payload.AddRange(EscPos.Initialize);
             payload.AddRange(EscPos.AlignCenter);
 
+            //Header
+            payload.AddRange(Header_000(ODIndex, datiComanda));
 
-            // Nome OrderDevice -- testo normale --
-            payload.AddRange(EscPos.TextNormal);
-            riga = string.Format("=== {0} ===\r\n\r\n", _device.GetDevice(ODIndex).NomeOrderDevice);
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            //Revenue Center -- testo doppio --
-            payload.AddRange(EscPos.TextDoubleSize);
-            riga = datiComanda.Rvc_name;
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            // Tavolo -- testo triplo, grassetto e centrato --
-            payload.AddRange(EscPos.TextTripleSize);
-            payload.AddRange(EscPos.TextBoldOn);
-            if (datiComanda.Tavolo != "") riga = string.Format("\r\nTav. {0}\r\n", datiComanda.Tavolo);
-            else riga = string.Format("\r\nCheck {0} \r\n", datiComanda.CheckNumber);
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            //ID Conto -- testo doppio
-            payload.AddRange(EscPos.TextDoubleSize);
-            if (datiComanda.CheckID != "")
-            {
-                riga = string.Format("{0}\r\n", datiComanda.CheckID);
-                payload.AddRange(Encoding.ASCII.GetBytes(riga));
-            }
-
-            // Riga -- testo doppio centrato --
-            payload.AddRange(EscPos.TextDoubleSize);
-            payload.AddRange(EscPos.TextBoldOff);
-            riga = string.Format("-------------------\r\n");
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            // Marcia -- testo doppio  -- 
-            int numcorsa = listaArticoli[0].numcorsa;
-            payload.AddRange(EscPos.AlignCenter);
-            payload.AddRange(EscPos.TextTripleSize);
-            payload.AddRange(EscPos.NoColorInv);
-            riga = string.Format(string.Format("\r\n{0} {1}\r\n", _config.Lbl_Marcia, numcorsa));
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-            //var raggruppatiPerCorsa = listaArticoli.GroupBy(m => m.corsa);
-            //int corsacorr = 0;
-
-            foreach (MenuItemPrint articolo in listaArticoli)
-            {
-
-                // Articolo -- testo doppio  -- 
-                payload.AddRange(EscPos.AlignLeft);
-                payload.AddRange(EscPos.TextDoubleSize);
-                payload.AddRange(EscPos.NoColorInv);
-                string artprint = articolo.nome;
-                string refprint = articolo.reference;
-                if (articolo.nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.nome.Substring(0, _config.LunghNomeArticoli - 1));
-                if (articolo.reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.reference.Substring(0, _config.LunghNomeArticoli - 1));
-                StringBuilder art = new StringBuilder();
-                art.Append(articolo.quant);
-                //art.Append(" x ");
-                art.Append(" ");
-                if ((articolo.nome == "" || articolo.nome.StartsWith("#")) && articolo.reference != "") art.Append(refprint);
-                else art.Append(artprint);
-                art.Append("\r\n");
-                if (articolo.nome != "" && articolo.reference != "")
-                {
-                    art.Append("  ");
-                    art.Append(articolo.reference);
-                    art.Append("\r\n");
-                }
-                payload.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
-                foreach (CondimentPrint condimento in articolo.condiments)
-                {
-                    // Condimento -- testo doppia altezza sottolineato
-                    payload.AddRange(EscPos.AlignLeft);
-                    payload.AddRange(EscPos.TextDoubleHeight);
-                    StringBuilder cond = new StringBuilder();
-                    cond.Append("     ");
-                    //payload.AddRange(EscPos.Underline2);
-                    if (condimento.quant != "1")
-                    {
-                        cond.Append(condimento.quant);
-                        //cond.Append(" x "); 
-                        cond.Append(" ");
-                    }
-
-                    if ((condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "") cond.Append(condimento.reference);
-                    else cond.Append(condimento.nome);
-                    //payload.AddRange(EscPos.NoUnderline);
-                    //cond.Append("\r\n");
-
-                    //payload.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
-                    if (!(condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "")
-                    {
-                        cond.Append("     ");
-                        cond.Append(condimento.reference);
-                    }
-                    payload.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
-                    payload.AddRange(EscPos.NoUnderline);
-                    payload.AddRange(Encoding.ASCII.GetBytes("\r\n"));
-                }
-            }
-
-
-            // Riga -- testo doppio centrato --
-            payload.AddRange(EscPos.TextDoubleSize);
-            payload.AddRange(EscPos.TextBoldOff);
-            riga = string.Format("-------------------\r\n");
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
-
-            payload.AddRange(EscPos.TextNormal);
-            payload.AddRange(EscPos.AlignLeft);
-            riga = string.Format("{0}\r\n\r\n", datiComanda.Utente);
-            payload.AddRange(Encoding.ASCII.GetBytes(riga));
+            //Corpo
+            payload.AddRange(Marcia_000(listaArticoli));
+            
+            //Footer
+            payload.AddRange(Footer_000(datiComanda));
 
             // Taglio carta
             payload.AddRange(EscPos.LineFeed3);
             payload.AddRange(EscPos.PartCutPaper);
-            //payload.AddRange(EscPos.LineFeed);
 
 
             return payload;
         }
                    
-        /*public async Task<List<NomiCorse>> LeggiNomiCorse()
-        {
-            ICorseRepository repository;
-
-            if (_tipoDB==2)
-            {
-                repository = new CorseRepositoryMySql(_connString);
-            }
-            else
-            {
-                repository = new CorseRepositorySqlServer(_connString);
-            }
-        
-            // Da questo punto in poi, non ti interessa più quale db stai usando!
-            try
-            {
-                List<NomiCorse> corse = await repository.OttieniNomiCorseAsync();
-
-                return corse;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Errore: {ex.Message}");
-                return new List<NomiCorse>();
-            }
-        }*/
-
         public async Task<List<NomiCorse>> LeggiNomiCorse()
         {
             // _dbFactory è già stato istanziato in GestInitEvent

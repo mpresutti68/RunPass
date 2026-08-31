@@ -1265,7 +1265,6 @@ namespace CourseMng
                 string referenceArt = "";
                 string seatart;
                 string pesoart = "";
-                List<CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
 
                 // asticolo 1
                 nomeArt = "Articolo 1";
@@ -1274,7 +1273,8 @@ namespace CourseMng
                 quant = "1";
                 price = "11.00";
                 seatart = "1";
-                referenceArt = "Test Articolo 1";
+                referenceArt = "refer Articolo 1";
+                pesoart = "1.100";
 
                 //var conds = item.DetailItem;
                 //var listcond = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)conds).Condiments;
@@ -1292,6 +1292,7 @@ namespace CourseMng
                 priceCond = "1.0";
 
                 CondimentPrint Condiments = new CondimentPrint { nome = nomeCond, prezzo = priceCond, quant = quantCond, reference = referenceCond, peso = pesocond };
+                List<CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
                 ListaCondiment.Add(Condiments);
 
                 MenuItemPrint Articolo = new MenuItemPrint
@@ -1305,18 +1306,19 @@ namespace CourseMng
                 quant = "1";
                 price = "12.00";
                 seatart = "1";
-                referenceArt = "Test Articolo 2";
-
+                referenceArt = "refer Articolo 2";
+                pesoart = "";
                 //var conds = item.DetailItem;
                 //var listcond = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)conds).Condiments;
 
-               
+
                 nomeCond = "Condimento 1 di 2";
                 quantCond = "1";
                 referenceCond = "refer cond 1 di 2";
                 priceCond = "2.0";
 
                 Condiments = new CondimentPrint { nome = nomeCond, prezzo = priceCond, quant = quantCond, reference = referenceCond, peso = pesocond };
+                ListaCondiment = new List<CondimentPrint> { };
                 ListaCondiment.Add(Condiments);
 
                 Articolo = new MenuItemPrint
@@ -1655,7 +1657,7 @@ namespace CourseMng
                     //payload.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
                     if (!(condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "")
                     {
-                        cond.Append("     ");
+                        cond.Append("\r\n     ");
                         cond.Append(condimento.reference);
                     }
                     corpo.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));

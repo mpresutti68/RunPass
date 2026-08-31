@@ -13,4 +13,7 @@ if "%messaggio%"=="" (
 :: Esegue il commit con il messaggio inserito
 git commit -m "%messaggio%"
 
+
+TIMEOUT /T 10
+
 endlocal

@@ -1242,7 +1242,7 @@ namespace CourseMng
         {
             DatiComanda dati = new DatiComanda();
             dati.CheckNumber = "00900";
-            dati.CheckID = "";
+            dati.CheckID = "check di test";
             dati.Tavolo = "100";
             dati.Utente = "Teststampa";
             dati.Rvc_name = "Ristorante Test";
@@ -1422,13 +1422,13 @@ namespace CourseMng
 
         private void stampaComanda(byte[] data, OrderDeviceCache.OrderDeviceInfo device, bool test = false)
         {
-            //OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(indiceCorrente);
+            bool primoTent = false;
+            if (device.IPBackup != null && device.PortaBackup != null) primoTent = true;
+            if (TestConnessioneStampante(device.IPPrinter, device.PortaPrinter, test, primoTent))
+            {
+                /*using (TcpClient client = new TcpClient())
+                {
 
-            if (TestConnessioneStampante(device.IPPrinter, device.PortaPrinter, test))
-                {
-                using (TcpClient client = new TcpClient())
-                {
-                    
                     try
                     {
 
@@ -1437,7 +1437,7 @@ namespace CourseMng
 
                         using (NetworkStream stream = client.GetStream())
                         {
-                            //OpsContext.ShowMessage(messageSow(data.ToString()));
+                            //OpsContext.ShowMessage(data.ToString());
                             stream.Write(data, 0, data.Length);
                             stream.Flush();
 
@@ -1460,11 +1460,58 @@ namespace CourseMng
                         Console.WriteLine($"Errore stampa");
                         myLog.Error($"C2DF02C8 - Errore stampa: {device.IPPrinter}:{device.PortaPrinter}", ex);
                     }
+                }*/
+                stampaScontrino(data, device.IPPrinter, device.PortaPrinter, test);
+            }
+            else
+            {
+                if (TestConnessioneStampante(device.IPBackup, device.PortaBackup, test))
+                {
+                    stampaScontrino(data, device.IPBackup, device.PortaBackup, test);
                 }
             }
         }
 
-        public bool TestConnessioneStampante(string ip, int porta, bool test =false, int timeoutMillisecondi = 3000)
+        private void stampaScontrino(byte[] data, string IPPrinter, int PortaPrinter, bool test)
+        {
+            using (TcpClient client = new TcpClient())
+            {
+
+                try
+                {
+
+                    client.Connect(IPPrinter, PortaPrinter);
+
+
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        //OpsContext.ShowMessage(data.ToString());
+                        stream.Write(data, 0, data.Length);
+                        stream.Flush();
+
+                    }
+                    if (test)
+                    {
+                        Console.WriteLine($"Comanda Stampata");
+                        myLog.Debug("Comanda Stampata");
+                    }
+                }
+                catch (SocketException ex)
+                {
+                    // Gestione degli errori di rete (es. stampante spenta o IP errato)
+                    Console.WriteLine($"Errore di rete durante la connessione alla stampante: {IPPrinter}:{PortaPrinter}");
+                    myLog.Error($"9E11D85E - Errore stampante: {IPPrinter}:{PortaPrinter}", ex);
+                }
+                catch (Exception ex)
+                {
+                    // Gestione degli errori generici
+                    Console.WriteLine($"Errore stampa");
+                    myLog.Error($"C2DF02C8 - Errore stampa: {IPPrinter}:{PortaPrinter}", ex);
+                }
+            }
+        }
+
+        public bool TestConnessioneStampante(string ip, int porta, bool test = false, bool primotent = false, int timeoutMillisecondi = 3000)
         {
             using (TcpClient client = new TcpClient())
             {
@@ -1480,13 +1527,20 @@ namespace CourseMng
                     if (!completato)
                     {
                         // Il timeout è scaduto: la stampante è lenta, irraggiungibile o spenta
-                        OpsContext.ShowMessage(messageSow($"Errore di rete durante la connessione alla stampante: {ip}:{porta}"));
-                        myLog.Error($"F2AA9C53 - Errore stampante: {ip}:{porta}");
+                        if (!primotent)
+                        {
+                            OpsContext.ShowMessage($"Errore di rete durante la connessione alla stampante: {ip}:{porta}");
+                            myLog.Error($"F2AA9C53 - Errore stampante: {ip}:{porta}");
+                        }
+                        else
+                        {
+                            myLog.Info("Stampante primaria non disponibile, invio backup");
+                        }
                         return false;
                     }
                     else
                     {
-                        if (test) OpsContext.ShowMessage(messageSow($"Connessione stampante: {ip}:{porta} OK"));
+                        if (test) OpsContext.ShowMessage($"Connessione stampante: {ip}:{porta} OK");
                     }
                     // Se arriviamo qui, il task è completato. Verifichiamo se siamo connessi.
                     return client.Connected;
@@ -1495,13 +1549,19 @@ namespace CourseMng
                 {
                     // ConnectAsync genera un'AggregateException (che contiene una SocketException) 
                     // se la connessione viene esplicitamente rifiutata (es. porta sbagliata)
-                    Console.WriteLine($"Errore di rete durante la connessione alla stampante: {ip}:{porta}");
-                    myLog.Error($"68CCC233 - Errore stampante: {ip}:{porta}", ex); ;
+                    //Console.WriteLine($"Errore di rete durante la connessione alla stampante: {ip}:{porta}");
+                    if (!primotent)
+                        myLog.Error($"68CCC233 - Errore stampante: {ip}:{porta}", ex);
+                    else
+                        myLog.Info("Stampante primaria non disponibile, invio backup");
                     return false;
                 }
                 catch (Exception ex)
                 {
-                    myLog.Error($"2F89FCC5 - Errore impreviso: {ip}:{porta}", ex); ;
+                    if (!primotent)
+                        myLog.Error($"2F89FCC5 - Errore impreviso: {ip}:{porta}", ex);
+                    else
+                        myLog.Info("Stampante primaria non disponibile, invio backup");
                     return false;
                 }
             } // Il blocco using chiuderà il TcpClient di test liberando le risorse

@@ -2487,6 +2487,32 @@ namespace CourseMng
         }
 
         [ExtensibilityMethod]
+        public void MarciaNext()
+        {
+            if (!_extensionEnbled || !_coursemng_enable)
+            {
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
+                myLog.Warn("AC35B43F - Estensione Non abilitata");
+                return;
+            }
+
+            EseguiMarcia(_CorseMarciate.Max()+1);
+        }
+
+        [ExtensibilityMethod]
+        public void RepeatMarcia()
+        {
+            if (!_extensionEnbled || !_coursemng_enable)
+            {
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
+                myLog.Warn("AC35B43F - Estensione Non abilitata");
+                return;
+            }
+
+            EseguiMarcia(_CorseMarciate.Max());
+        }
+
+        [ExtensibilityMethod]
         public void Marcia(object numCorsa)
         {
             if (!_extensionEnbled || !_coursemng_enable)
@@ -2496,6 +2522,12 @@ namespace CourseMng
                 return;
             }
 
+            EseguiMarcia(Convert.ToInt32(numCorsa));
+
+        }
+
+        private void EseguiMarcia(int numCorsa)
+        {
             try
             {
                 if (OpsContext.Check == null || !_coursemng_enable || Convert.ToInt32(numCorsa) == 1 || Convert.ToInt32(numCorsa) > 20)
@@ -2534,17 +2566,6 @@ namespace CourseMng
                 OpsContext.ShowMessage(messageSow("Errore Marcia"));
                 myLog.Error("EAA72F2E - Errore Marcia", ex);
             }
-            /*
-            Micros.PosCore.Extensibility.Ops.CheckDetailItem articolo = OpsContext.CheckDetail[OpsContext.CheckDetail.Count - 1];
-            if (articolo != null)
-            {
-               
-                OpsCommand stpMarcia = new OpsCommand(OpsCommandType.MenuItem);
-                                
-                stpMarcia.Number = ValorePrintClass(OpsContext, Convert.ToInt32(numCorsa)); 
-                OpsContext.ProcessCommand(stpMarcia);
-            }
-            */
         }
 
         [ExtensibilityMethod]

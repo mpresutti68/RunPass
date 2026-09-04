@@ -13,12 +13,14 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Resources;
 using System.Runtime.CompilerServices;
 using System.Runtime.Remoting.Contexts;
 using System.Runtime.Remoting.Messaging;
 using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
+using Google.Protobuf.WellKnownTypes;
 using Micros.DataStore;
 using Micros.Ops;
 using Micros.Ops.Extensibility;
@@ -176,31 +178,27 @@ namespace CourseMng
     {
         public bool Develop1 { get; set; }
 
-        public int VerbosityDisplay { get; set; }
+        public int VerbosityDisplay { get; set; } = 0;
 
         public long RTT_ID { get; set; }
 
         public int VerbosityLog { get; set; }
 
-        public int LunghNomeArticoli { get; set; }
+        public int LunghNomeArticoli { get; set; } = 19;
 
         public List<int> RvcCourseMng { get; set; }
 
         public List<int> RvcMenu { get; set; }
 
-        public int CorsaIniziale { get; set; }
+        public int CorsaIniziale { get; set; } = 1;
 
-        public int CorsaLimite { get; set; }
+        public int CorsaLimite { get; set; } = 5;
 
         public List<long> CambioCorsa { get; set; }
 
         public List<List<int>> OrderDeviceMarcia { get; set; }
 
-        //public long CorsaPreDessert { get; set; }
-
-        //public long CorsaDessert { get; set; }
-
-        //public long CorsaPetitFour { get; set; }
+        public int CodificaStampante { get; set; } = 850;
 
         public CoppiaValori CorsaPreDessert { get; set; }
 
@@ -218,7 +216,7 @@ namespace CourseMng
 
         public long OverPrintClass { get; set; }
 
-        public int SubLevelNoPrice { get; set; }
+        public int SubLevelNoPrice { get; set; } = 8;
 
         public List<long> Suite { get; set; }
     }
@@ -689,6 +687,141 @@ namespace CourseMng
 
     }
 
+    public class GestioneCorse
+    {
+        // Usiamo private set in modo che le liste possano essere modificate solo tramite i metodi di questa classe
+        private  HashSet<int> CorseMarciate { get; set; }
+        private  HashSet<int> CorseUsate { get;  set; }
+        private int CorsaIniziale { get; set; }
+        private int CorsaLimite { get; set; }
+        private int CorsaAttuale { get; set; }
+        public GestioneCorse(int corsainiz, int corsalim)
+        {
+            CorseMarciate = new HashSet<int>();
+            CorseUsate = new HashSet<int>();
+            CorsaIniziale = corsainiz;
+            CorsaLimite = corsalim;
+            CorsaAttuale = corsainiz;
+            AggiungiCorsaMarciata(corsainiz);
+        }
+
+        // --- METODI PER L'INSERIMENTO DATI ---
+
+        public int GetCorsaAttuale()
+        {  return CorsaAttuale; }
+
+        public int GetNumeroCorseUsate()
+        { return CorseUsate.Count; }
+
+        public bool GetIfIsOnlyCourse(int corsa)
+        { return (GetIfCorsaUsata(corsa) && (GetNumeroCorseUsate() == 1)); }
+
+        public void AggiungiCorsaMarciata(int corsa)
+        { CorseMarciate.Add(corsa); }
+
+        public HashSet<int> GetCorseMarciate()
+        { return CorseMarciate; }
+
+        public void AggiungiCorsaUsata(int corsa)
+        { CorseUsate.Add(corsa); }
+            
+        public bool GetIfCorsaAttualeMarciata()
+        { return (CorseMarciate.Contains(CorsaAttuale)); }
+
+        public void PulisciTutto()
+        {
+            CorseMarciate.Clear();
+            CorseUsate.Clear();
+        }
+
+        public void ImpostaCorsaAttuale(int? corsa = null)
+        {
+            if (corsa == null)
+                CorsaAttuale = GetUltimaCorsaMarciata();
+            else
+                if (GetIfCorsaUsata(corsa.Value) || (corsa.Value == GetUltimaCorsaUsata() + 1))
+                {
+                    CorsaAttuale = corsa.Value;
+                }
+        }
+
+        public int? GetCorsaSuccessivaMarciata(int corsaAttuale)
+        {
+            if (!CorseMarciate.Any())
+                return null;
+
+            var corseMaggiori = CorseMarciate.Where(c => c > corsaAttuale);
+
+            if (!corseMaggiori.Any())
+                return null;
+
+            return corseMaggiori.Min();
+        }
+
+        public int? GetProssimaCorsaDaMarciare()
+        {
+            if (!CorseUsate.Any())
+                return null;
+            return CorseUsate.Where(c => c > GetUltimaCorsaMarciata()).Min();
+        }
+
+        public int GetUltimaCorsaMarciata()
+        {
+            if (!CorseMarciate.Any())
+                return 0;
+           return CorseMarciate.Where(c => c <= 14).Max();
+        }
+
+        public int GetUltimaCorsaUsata()
+        {
+            if (!CorseUsate.Any())
+                return 0;
+            var corseIterabili = CorseUsate.Where(c => c <= 14);
+            if (!corseIterabili.Any())
+                return 0;
+            else
+                return corseIterabili.Max();
+        }
+
+        public bool GetIfTutteCorseMarciate()
+        { return CorseUsate.IsSubsetOf(CorseMarciate); }
+
+        public bool GetIfCorsaMarciata(int corsa)
+        { return CorseMarciate.Contains(corsa); }
+
+        public bool GetIfCorsaUsata(int corsa)
+        { return CorseUsate.Contains(corsa); }
+
+        public int? GetCorsaSuccessivaUsata(int corsaAttuale)
+        {
+            if (!CorseUsate.Any())
+                return null;
+
+            var corseMaggiori = CorseUsate.Where(c => c > corsaAttuale);
+
+            if (!corseMaggiori.Any())
+                return null;
+
+            return corseMaggiori.Min();
+        }
+
+        public void ImpostaCorsaSuccessivaSelezionabile()
+        {
+            List<int> numeri = Enumerable.Range(1, 14).ToList();
+            var corseIterabili = new List<int>();
+            int ultimaCorsaMarciata = GetUltimaCorsaMarciata();
+            if (CorseUsate.Any())
+            {
+                corseIterabili = numeri.Where(c => c > CorsaAttuale && c >= ultimaCorsaMarciata && c <= GetUltimaCorsaUsata() + 1 && c <= CorsaLimite).ToList();
+
+                if (corseIterabili.Any())
+                    CorsaAttuale = corseIterabili[0];
+                else
+                    CorsaAttuale = ultimaCorsaMarciata;
+            }
+        }
+    }
+
     public interface ICorseRepository
     {
         Task<List<NomiCorse>> OttieniNomiCorseAsync();
@@ -857,6 +990,7 @@ namespace CourseMng
 
         // --- AZIONI ---
         public static readonly byte[] Initialize = { 0x1B, 0x40 }; // Resetta la stampante (ESC @)
+        public static readonly byte[] impostaCodePage850 = { 27, 116, 2 }; // Imposta il CodePage a 850
         public static readonly byte[] PartCutPaper = { 0x1D, 0x56, 0x31 }; // Taglio parziale
         public static readonly byte[] LineFeed = { 0x1B, 0x64, 1 };
         public static readonly byte[] LineFeed2 = { 0x1B, 0x64, 2 };
@@ -1035,11 +1169,11 @@ namespace CourseMng
         private string _connStringSqlServer = "Server=LocalHost\\SQlExpress;Database=datastore;";
         private string _account = "Uid=chkrdy;Pwd=chkrdy1$;";
         private string _connString = "";
-        private HashSet<int> _CorseMarciate;
-        private HashSet<int> _CorseUsate;
+        private GestioneCorse _gestioneCorse;
         private IDbConnectionFactory _dbFactory;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _processedPrints =
                 new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
+        private Encoding _codificaStampante;
 
         [ImportingConstructor]
         public Application(IExecutionContext context)
@@ -1074,6 +1208,8 @@ namespace CourseMng
             }
 
             long codreq = TestWork.LeggiInt(_config.RTT_ID.ToString());
+
+            _codificaStampante = Encoding.GetEncoding(_config.CodificaStampante);
 
             if (OpsContext.PropHierStrucID != codreq)
             {
@@ -1163,7 +1299,7 @@ namespace CourseMng
             return EventProcessingInstruction.Continue;
         }
 
-        private DatiComanda PreparaDatiComanda(int marciacorr = 1)
+        private DatiComanda PreparaDatiComanda()
         {
             DatiComanda dati = new DatiComanda();
             dati.CheckNumber = OpsContext.CheckNumber.ToString();
@@ -1171,7 +1307,7 @@ namespace CourseMng
             dati.Tavolo = OpsContext.CheckTableName;
             dati.Utente = OpsContext.TransEmployeeCheckName;
             dati.Rvc_name = OpsContext.RvcName;
-            dati.MarciaCorrente = marciacorr;
+            //dati.MarciaCorrente = marciacorr;
             return dati;
         }
 
@@ -1389,7 +1525,8 @@ namespace CourseMng
             //List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
             List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
 
-            DatiComanda datiComanda = PreparaDatiComanda(_CorseMarciate.Max());
+            //DatiComanda datiComanda = PreparaDatiComanda(_CorseMarciate.Max());
+            DatiComanda datiComanda = PreparaDatiComanda();
 
             List<byte> payload = new List<byte>();
             byte[] data = payload.ToArray();
@@ -1439,7 +1576,7 @@ namespace CourseMng
         private void stampaComanda(byte[] data, OrderDeviceCache.OrderDeviceInfo device, bool test = false)
         {
             bool primoTent = false;
-            if (device.IPBackup != null && device.PortaBackup != null) primoTent = true;
+            if (device.IPBackup != null) primoTent = true;
             if (TestConnessioneStampante(device.IPPrinter, device.PortaPrinter, test, primoTent))
             {
                 /*using (TcpClient client = new TcpClient())
@@ -1589,6 +1726,7 @@ namespace CourseMng
 
             // Inizializza stampante
             payload.AddRange(EscPos.Initialize);
+            payload.AddRange(EscPos.impostaCodePage850);
             payload.AddRange(EscPos.AlignCenter);
 
             //Header
@@ -1617,33 +1755,33 @@ namespace CourseMng
             // Nome OrderDevice -- testo normale --
             intestazione.AddRange(EscPos.TextNormal);
             riga = string.Format("=== {0} ===\r\n\r\n", _device.GetDevice(ODIndex).NomeOrderDevice);
-            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(_codificaStampante.GetBytes(riga));
 
             //Revenue Center -- testo doppio --
             intestazione.AddRange(EscPos.TextDoubleSize);
             riga = datiComanda.Rvc_name;
-            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(_codificaStampante.GetBytes(riga));
 
             // Tavolo -- testo triplo, grassetto e centrato --
             intestazione.AddRange(EscPos.TextTripleSize);
             intestazione.AddRange(EscPos.TextBoldOn);
             if (datiComanda.Tavolo != "") riga = string.Format("\r\nTav. {0}\r\n", datiComanda.Tavolo);
             else riga = string.Format("\r\nCheck {0} \r\n", datiComanda.CheckNumber);
-            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(_codificaStampante.GetBytes(riga));
 
             //ID Conto -- testo doppio
             intestazione.AddRange(EscPos.TextDoubleSize);
             if (datiComanda.CheckID != "")
             {
                 riga = string.Format("{0}\r\n", datiComanda.CheckID);
-                intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
+                intestazione.AddRange(_codificaStampante.GetBytes(riga));
             }
 
             // Riga -- testo doppio centrato --
             intestazione.AddRange(EscPos.TextDoubleSize);
             intestazione.AddRange(EscPos.TextBoldOff);
             riga = string.Format("-------------------\r\n");
-            intestazione.AddRange(Encoding.ASCII.GetBytes(riga));
+            intestazione.AddRange(_codificaStampante.GetBytes(riga));
 
             return intestazione;
         }
@@ -1662,10 +1800,10 @@ namespace CourseMng
                 int numcorsa = articolo.numcorsa;
                 if (numcorsa > corsacorr)
                 {
-                    // Corsa -- testo grande, grassetto, inverito e centrato --
+                    // Corsa -- testo grande, grassetto e invertito (se la corsa è già marciata),  centrato --
                     corpo.AddRange(EscPos.AlignCenter);
 
-                    if (numcorsa == datiComanda.MarciaCorrente)
+                    if (_gestioneCorse.GetIfCorsaMarciata(numcorsa))
                     {
                         corpo.AddRange(EscPos.TextNormal);
                         corpo.AddRange(EscPos.NoColorInv);
@@ -1677,7 +1815,8 @@ namespace CourseMng
                         corpo.AddRange(EscPos.ColorInv);
                         riga = string.Format("\r\nSegue {0}\r\n\r\n", articolo.corsa);
                     }
-                    corpo.AddRange(Encoding.ASCII.GetBytes(riga));
+                    //corpo.AddRange(_codificaStampante.GetBytes(riga));
+                    corpo.AddRange(_codificaStampante.GetBytes(riga));
                     corsacorr = numcorsa;
                 }
 
@@ -1709,7 +1848,7 @@ namespace CourseMng
                     art.Append("\r\n");
                 }
                 //payload.AddRange(EscPos.TextDoubleHeight);
-                corpo.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
+                corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
                 foreach (CondimentPrint condimento in articolo.condiments)
                 {
                     // Condimento -- testo doppia altezza sottolineato
@@ -1730,15 +1869,15 @@ namespace CourseMng
                     //payload.AddRange(EscPos.NoUnderline);
                     //cond.Append("\r\n");
 
-                    //payload.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
+                    //payload.AddRange(_codificaStampante.GetBytes(cond.ToString()));
                     if (!(condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "")
                     {
                         cond.Append("\r\n     ");
                         cond.Append(condimento.reference);
                     }
-                    corpo.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
+                    corpo.AddRange(_codificaStampante.GetBytes(cond.ToString()));
                     corpo.AddRange(EscPos.NoUnderline);
-                    corpo.AddRange(Encoding.ASCII.GetBytes("\r\n"));
+                    corpo.AddRange(_codificaStampante.GetBytes("\r\n"));
                 }
             }
             return corpo;
@@ -1753,12 +1892,12 @@ namespace CourseMng
             footer.AddRange(EscPos.TextDoubleSize);
             footer.AddRange(EscPos.NoColorInv);
             riga = string.Format("-------------------\r\n");
-            footer.AddRange(Encoding.ASCII.GetBytes(riga));
+            footer.AddRange(_codificaStampante.GetBytes(riga));
 
             footer.AddRange(EscPos.TextNormal);
             footer.AddRange(EscPos.AlignLeft);
             riga = string.Format("{0} -- {1}\r\n\r\n", datiComanda.Utente, DateTime.Now.ToString());
-            footer.AddRange(Encoding.ASCII.GetBytes(riga));
+            footer.AddRange(_codificaStampante.GetBytes(riga));
 
             return footer; 
         }
@@ -1769,12 +1908,14 @@ namespace CourseMng
             string riga = "";
 
             // Marcia -- testo doppio  -- 
-            int numcorsa = listaArticoli[0].numcorsa;
+            string numcorsa = listaArticoli[0].numcorsa.ToString();
+            if (listaArticoli[0].numcorsa > 14)
+                numcorsa = NomeAltraCorsa(listaArticoli[0].numcorsa);
             marcia.AddRange(EscPos.AlignCenter);
             marcia.AddRange(EscPos.TextTripleSize);
             marcia.AddRange(EscPos.NoColorInv);
             riga = string.Format(string.Format("\r\n{0} {1}\r\n", _config.Lbl_Marcia, numcorsa));
-            marcia.AddRange(Encoding.ASCII.GetBytes(riga));
+            marcia.AddRange(_codificaStampante.GetBytes(riga));
 
             foreach (MenuItemPrint articolo in listaArticoli)
             {
@@ -1799,7 +1940,7 @@ namespace CourseMng
                     art.Append(articolo.reference);
                     art.Append("\r\n");
                 }
-                marcia.AddRange(Encoding.ASCII.GetBytes(art.ToString()));
+                marcia.AddRange(_codificaStampante.GetBytes(art.ToString()));
                 foreach (CondimentPrint condimento in articolo.condiments)
                 {
                     // Condimento -- testo doppia altezza sottolineato
@@ -1821,9 +1962,9 @@ namespace CourseMng
                         cond.Append("     ");
                         cond.Append(condimento.reference);
                     }
-                    marcia.AddRange(Encoding.ASCII.GetBytes(cond.ToString()));
+                    marcia.AddRange(_codificaStampante.GetBytes(cond.ToString()));
                     marcia.AddRange(EscPos.NoUnderline);
-                    marcia.AddRange(Encoding.ASCII.GetBytes("\r\n"));
+                    marcia.AddRange(_codificaStampante.GetBytes("\r\n"));
                 }
             }
 
@@ -1837,6 +1978,7 @@ namespace CourseMng
 
             // Inizializza stampante
             payload.AddRange(EscPos.Initialize);
+            payload.AddRange(EscPos.impostaCodePage850);
             payload.AddRange(EscPos.AlignCenter);
 
             //Header
@@ -2001,8 +2143,9 @@ namespace CourseMng
             
             _coursemng_enable = _config.RvcCourseMng.Contains(OpsContext.RvcNumber) ;
             _menu_enable = _config.RvcMenu.Contains(OpsContext.RvcNumber) && _config.Suite.Count >0; // il menu è attivo se il revenue center fa parte della lista e l'elenco dei suite non è vuoto
-            _CorseMarciate = new HashSet<int>();
-            _CorseUsate = new HashSet<int>();
+            //_CorseMarciate = new HashSet<int>();
+            //_CorseUsate = new HashSet<int>();
+            _gestioneCorse = new GestioneCorse(_config.CorsaIniziale,_config.CorsaLimite);
 
             if ((_device is null || _actual_Rvc != OpsContext.RvcID))
             {
@@ -2018,13 +2161,12 @@ namespace CourseMng
                     myLog.Error("FDC7F8AF - Errore Lettura Articoli", ex);
                 }
             }
-
             
-
             if (OpsContext.Check != null && _coursemng_enable && !OpenCheck)
             {
                 
-                _CorseMarciate.Add(1);
+                //_CorseMarciate.Add(1);
+                _gestioneCorse.AggiungiCorsaMarciata(1);
                 if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(messageSow("Cerca Marcia"));
                 foreach (CheckDetailItem riga in OpsContext.CheckDetail)
                 {
@@ -2033,27 +2175,32 @@ namespace CourseMng
                         if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(messageSow(string.Format("Articolo {0}", riga.Name)));
                         if (articolo.MiObjNum == _config.Marcia)
                         {
-                            _CorseMarciate.Add(articolo.KdsCourseNum);
+                            //_CorseMarciate.Add(articolo.KdsCourseNum);
+                            _gestioneCorse.AggiungiCorsaMarciata(articolo.KdsCourseNum);
                         }
-                        _CorseUsate.Add(articolo.KdsCourseNum);
+                        //_CorseUsate.Add(articolo.KdsCourseNum);
+                        _gestioneCorse.AggiungiCorsaUsata(articolo.KdsCourseNum);
                     }
                 }
-
+                _gestioneCorse.ImpostaCorsaAttuale();
             }
             else if (OpenCheck)
             {
-                _CorseMarciate = new HashSet<int>();
-                _CorseMarciate.Add(1);
+                //_CorseMarciate = new HashSet<int>();
+                //_CorseMarciate.Add(1);
+                //_gestioneCorse.AggiungiCorsaMarciata(1);#
             }
 
             if (OpsContext.Check != null && _coursemng_enable)
             {
                 try
                 {
-                    if (OpenCheck)
+                    /*if (OpenCheck)
                         ImpostaCorsa(_config.CorsaIniziale);
                     else
                         ImpostaCorsa(_CorseMarciate.Max());
+                        int ultimacorsamarciata = _gestioneCorse.GetUltimaCorsaMarciata();*/
+                    ImpostaCorsa();
                 }
                 catch (Exception ex)
                 {
@@ -2099,13 +2246,12 @@ namespace CourseMng
                 if (!args.MiClass.OptionBits.CheckBit(2) && args.MiClass.OptionBits.CheckBit(45) && _coursemng_enable && _extensionEnbled)
                     try
                     {
-                        string valoreCorsa = LeggiLaMiaVariabile("CorsaCorrente");
+                        int valoreCorsa = _gestioneCorse.GetCorsaAttuale(); 
                         int valore;
 
-                        if (!string.IsNullOrEmpty(valoreCorsa) && int.TryParse(valoreCorsa, out int corsaAttuale))
+                        if (valoreCorsa > 0)
                         {
                             dynamic argsDinamico = args;
-
                             try
                             {
 
@@ -2118,29 +2264,25 @@ namespace CourseMng
                                 if (articolo != null)
                                 {
                                     valore = articolo.KdsCourseNum;
-                                    if (valore == 0)
+                                    if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
                                     {
-                                        if (int.Parse(valoreCorsa) >= 1 && int.Parse(valoreCorsa) <= _config.CambioCorsa.Count())
-                                        {
-                                            cmdCondimento.Number = _config.CambioCorsa[int.Parse(valoreCorsa) - 1];
-                                        }
-                                        else
-                                        {
-                                            long? condaltracorsa = CondAltraCorsa(int.Parse(valoreCorsa));
-                                            if (condaltracorsa != null)
-                                                cmdCondimento.Number = condaltracorsa.Value;
-                                        }
-
-                                        OpsContext.ProcessCommand(cmdCondimento);
-                                        OpsCommand cmdStorno = new OpsCommand(OpsCommandType.Void);
-                                        OpsContext.ProcessCommand(cmdStorno);
-                                        _CorseUsate.Add(int.Parse(valoreCorsa));
+                                        AggiungiCondimentoCorsa(valoreCorsa);
                                     }
-                                    else
-                                        _CorseUsate.Add(valore);
+                                    else  //L'articolo ha una corsa assegnata
+                                    {
+                                       
+                                        if (valore >= 15 && valore <= 17 && !_gestioneCorse.GetIfCorsaUsata(valore) && (_gestioneCorse.GetIfTutteCorseMarciate() || _gestioneCorse.GetIfIsOnlyCourse(valore)))   //verifica se si tratta di una corsa 'aggiuntiva' e che non sia già presente e che siano tutte marciate
+                                        {
+                                            bool risposta = OpsContext.AskQuestion("Tutte le altre corse sono marciate. Procedo anche con questa?");
+                                            if (risposta)
+                                            {
+                                                // Procedo con la preparazione immediata
+                                                _gestioneCorse.AggiungiCorsaMarciata(valore);
+                                            }
+                                        }
+                                        _gestioneCorse.AggiungiCorsaUsata(valore);
+                                    }
                                 }
-        
-                                    
                             }
                             catch (Exception ex)
                             {
@@ -2338,6 +2480,196 @@ namespace CourseMng
             }
         }
 
+        public void ImpostaCorsa(object numCorsa = null, bool aggCorsa = true)
+        {
+            if (!_extensionEnbled || !_coursemng_enable)
+            {
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
+                myLog.Warn("C63AF98A - Estensione Non abilitata");
+                return;
+            }
+
+            if (OpsContext.Check == null)
+                return;
+
+            int nuovaCorsa = _gestioneCorse.GetCorsaAttuale();
+            if (numCorsa != null)
+                nuovaCorsa = (int)numCorsa;
+
+            if (aggCorsa)
+                AggiornaCorsa(nuovaCorsa, _gestioneCorse.GetIfCorsaAttualeMarciata(), _gestioneCorse.GetUltimaCorsaMarciata());
+
+        }
+
+        public string OttieniStringaMarciate()
+        {
+            HashSet<int> valori = _gestioneCorse.GetCorseMarciate();
+            // Controllo di sicurezza nel caso l'HashSet sia nullo
+            if (valori == null || valori.Count == 0)
+            {
+                return "Nessuna Marciata"; // O semplicemente "Marciate " a seconda di cosa preferisci
+            }
+
+            if (_gestioneCorse.GetIfTutteCorseMarciate())
+            {
+                return "Tutte Marciate";
+            }
+
+            var valoriModificati = valori.Select(v =>
+            {
+                if (v >= 15 && v <=16) return NomeAltraCorsa(v);
+
+                return v.ToString(); // Mantiene il numero originale per tutti gli altri
+            });
+
+            // Unisce i valori dell'HashSet separandoli con una virgola e uno spazio
+            string elencoValori = string.Join(", ", valoriModificati);
+
+            // Costruisce la stringa finale
+            return $"Marciate: {elencoValori}";
+        }
+
+        private void AggiornaCorsa(int nuovaCorsa, bool immediata, int marciacorrente)
+        {
+            if (!_extensionEnbled || !_coursemng_enable)
+            {
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
+                myLog.Warn("83C1AE53 - Estensione Non abilitata");
+                return;
+            }
+            if (OpsContext.Check == null)
+                return;
+            string chiave1 = "CorsaCorrente";
+            string chiave2 = "NoteCorsa";
+            string chiave3 = "CorseMarciate";
+
+            string noteCorsa;
+            if (immediata)
+                noteCorsa = "Immediata";
+            else
+                noteCorsa = "A seguire";
+            OpsContext.Check.ExtensibilityDetail.RemoveAll(this.ApplicationName);
+            string testo1 = testoMessaggio(string.Format("Corsa {0}", nuovaCorsa), 40);
+            string testo2 = testoMessaggio(noteCorsa, 40);
+            string testo3 = testoMessaggio(OttieniStringaMarciate(), 40);
+            ExtensibilityDataInfo infoNuova1 = new ExtensibilityDataInfo(testo1, chiave1, "");
+            ExtensibilityDataInfo infoNuova2 = new ExtensibilityDataInfo(testo2, chiave2, "");
+            ExtensibilityDataInfo infoNuova3 = new ExtensibilityDataInfo(testo3, chiave3, "");
+
+            infoNuova1.SetPrintOnDisplayOnly();
+            infoNuova2.SetPrintOnDisplayOnly();
+            infoNuova3.SetPrintOnDisplayOnly();
+
+            OpsContext.Check.AddExtensibilityData(infoNuova1);
+            if (!immediata)
+                OpsContext.Check.AddExtensibilityData(infoNuova2);
+            OpsContext.Check.AddExtensibilityData(infoNuova3);
+            OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.Refresh));
+        }
+
+        private string testoMessaggio(string input, int lunghezzaTotale)
+        {
+            {
+                int lunginput = input.Length;
+                int lunglati = (lunghezzaTotale - lunginput) / 2;
+                string spaziSX = new string(' ', lunglati - 1);
+                string spaziDX = new string(' ', lunglati - 1);
+
+                return $"-{spaziSX}{input}{spaziDX}-";
+            }
+        }
+
+        private long? CondAltraCorsa(int numeroCorsa)
+        {
+            if (_config.CorsaPreDessert.Corsa == numeroCorsa)
+                return _config.CorsaPreDessert.Obj;
+            else if (_config.CorsaDessert.Corsa == numeroCorsa)
+                return _config.CorsaDessert.Obj;
+            else if (_config.CorsaPetitFour.Corsa == numeroCorsa)
+                return _config.CorsaPetitFour.Obj;
+            else
+                return null;
+        }
+
+        private string NomeAltraCorsa(int numeroCorsa)
+        {
+            if (_config.CorsaPreDessert.Corsa == numeroCorsa)
+                return "Pre-Dessert";
+            else if (_config.CorsaDessert.Corsa == numeroCorsa)
+                return "Dessert";
+            else if (_config.CorsaPetitFour.Corsa == numeroCorsa)
+                return "petitFour";
+            else
+                return null;
+        }
+
+        private void EseguiMarcia(int numCorsa)
+        {
+            try
+            {
+                if (OpsContext.Check == null || !_coursemng_enable || Convert.ToInt32(numCorsa) == 1 || !_gestioneCorse.GetIfCorsaUsata(numCorsa))
+                    return;
+
+                _gestioneCorse.ImpostaCorsaAttuale(numCorsa);
+
+                OpsCommand cmdMarcia = new OpsCommand(OpsCommandType.MenuItem);
+
+                cmdMarcia.Number = _config.Marcia;
+
+                OpsCommand cmdSend = new OpsCommand(OpsCommandType.TenderMedia);
+
+                cmdSend.Number = _config.TM_SendOrder;
+
+                if (_config.VerbosityDisplay > 2)
+                {
+                    OpsContext.ShowMessage(messageSow(string.Format("Marcia {0}", numCorsa)));
+                }
+                myLog.Debug("Marcia {0}");
+
+                OpsContext.ProcessCommand(cmdMarcia);
+
+                //_CorseMarciate.Add(Convert.ToInt32(numCorsa));
+                _gestioneCorse.AggiungiCorsaMarciata(Convert.ToInt32(numCorsa));
+                //AumentaCorsa();
+
+
+                if (_config.VerbosityDisplay > 1)
+                {
+                    OpsContext.ShowMessage(messageSow("Send Order"));
+                }
+                myLog.Debug("Send Order");
+                OpsContext.ProcessCommand(cmdSend);
+            }
+            catch (Exception ex)
+            {
+                OpsContext.ShowMessage(messageSow("Errore Marcia"));
+                myLog.Error("EAA72F2E - Errore Marcia", ex);
+            }
+        }
+
+        private void AggiungiCondimentoCorsa(int numCorsa)
+        {
+            OpsCommand cmdCondimento = new OpsCommand(OpsCommandType.MenuItem);
+            
+            if (numCorsa <= _config.CambioCorsa.Count())
+            {
+                cmdCondimento.Number = _config.CambioCorsa[numCorsa - 1];
+            }
+            else
+            {
+                long? condaltracorsa = CondAltraCorsa(numCorsa);
+                if (condaltracorsa != null)
+                    cmdCondimento.Number = condaltracorsa.Value;
+            }
+            if (cmdCondimento.Number != 0)
+            {
+                OpsContext.ProcessCommand(cmdCondimento);
+                OpsCommand cmdStorno = new OpsCommand(OpsCommandType.Void);
+                OpsContext.ProcessCommand(cmdStorno);
+                _gestioneCorse.AggiungiCorsaUsata(numCorsa);
+            }
+        }
+
         [ExtensibilityMethod]
         public void ViewCurrentCourse()
         {
@@ -2366,69 +2698,10 @@ namespace CourseMng
                 return;
             }
 
-            if (OpsContext.Check != null && _coursemng_enable)
+            if (OpsContext.Check != null)
             {
-                /*string chiave = "CorsaCorrente";
-
-                string valoreAttualeStr = LeggiLaMiaVariabile(chiave);
-                int corsaNuova = 0;
-
-                if (int.TryParse(valoreAttualeStr, out int corsaAttuale))
-                {
-                    corsaNuova = corsaAttuale + 1;
-                    if (corsaNuova > _config.CorsaLimite)
-                        corsaNuova = _config.CorsaIniziale;
-                }
-
-                ImpostaCorsa(corsaNuova);
-                */
-                string chiave = "CorsaCorrente";
-                //string valoreAttualeStr = LeggiLaMiaVariabile(chiave);
-                int corsaAttuale = int.Parse(LeggiLaMiaVariabile(chiave));
-
-                // Inizializzazione di base
-                int corsaMinima = _CorseMarciate.Max();
-                int corsaMassima = Math.Min(_CorseUsate.Max(), _config.CorsaLimite) + 1;
-                
-                int corsaNuova = corsaAttuale + 1;
-                if (corsaNuova > corsaMassima)
-                    corsaNuova = corsaMinima;    
-                
-                
-                
-
-                /*
-                // Calcoliamo il totale delle corse possibili per evitare un ciclo infinito
-                int corseTotali = (_config.CorsaLimite - _config.CorsaIniziale) + 1;
-                int tentativi = 0;
-
-                // Il ciclo avanza finché non troviamo una corsa valida
-                while (tentativi < corseTotali)
-                {
-                    // Gestione del rollover: se superiamo il limite, ripartiamo dall'inizio
-                    if (corsaNuova > _config.CorsaLimite)
-                    {
-                        corsaNuova = _config.CorsaIniziale;
-                    }
-
-                    // Se la corsa NON è marciata, l'abbiamo trovata: interrompiamo il ciclo
-                    if (!_CorseMarciate.Contains(corsaNuova) || corsaNuova==_CorseMarciate.Max())
-                    {
-                        break;
-                    }
-
-                    // La corsa è marciata. Incrementiamo per testare la successiva
-                    corsaNuova++;
-                    tentativi++;
-                }
-
-                // Controllo di sicurezza
-                if (tentativi >= corseTotali)
-                {
-                    throw new InvalidOperationException("Sistema bloccato: tutte le corse nel range sono presenti in CorseMarciate.");
-                }
-                */
-                ImpostaCorsa(corsaNuova);
+                _gestioneCorse.ImpostaCorsaSuccessivaSelezionabile();
+                ImpostaCorsa();
             }
             else
             {
@@ -2437,71 +2710,53 @@ namespace CourseMng
         }
 
         [ExtensibilityMethod]
-        public void VisCode()
-        {
-            OpsContext.ShowMessage(messageSow(OpsContext.PropHierStrucID.ToString()));
-        }
-
-        [ExtensibilityMethod]
-        public void ImpostaCorsa(object numCorsa)
+        public void CambiaCorsa(object numCorsa)
         {
             if (!_extensionEnbled || !_coursemng_enable)
             {
                 OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
-                myLog.Warn("C63AF98A - Estensione Non abilitata");
+                myLog.Warn("45DEDD32 - Estensione Non abilitata");
                 return;
             }
 
-            if (OpsContext.Check == null)
-                return;
-            int numeroCorsa = (int)numCorsa;
-
-
-            string chiave = "CorsaCorrente";
-            string app = this.ApplicationName;
-            OpsContext.Check.ExtensibilityDetail.RemoveAll(app, chiave);
-            ExtensibilityDataInfo infoNuova = null;
-            if (numeroCorsa <= 14)
+            if (OpsContext.Check != null)
             {
-                infoNuova = new ExtensibilityDataInfo(string.Format("** Corsa corrente {0} **", numCorsa), chiave, numeroCorsa.ToString());
+                _gestioneCorse.ImpostaCorsaAttuale(Convert.ToInt32(numCorsa));
+                ImpostaCorsa();
             }
             else
-            {     
-                string nomeCorsa = NomeAltraCorsa(numeroCorsa);
-                if (nomeCorsa != null)
-                    infoNuova = new ExtensibilityDataInfo(string.Format("** Corsa corrente {0} **", nomeCorsa), chiave, numeroCorsa.ToString());
-            }
-
-            if (infoNuova != null) {
-                infoNuova.SetPrintOnDisplayOnly();
-                OpsContext.Check.AddExtensibilityData(infoNuova);
+            {
+                OpsContext.ShowMessage(messageSow("Apri prima un conto!"));
             }
         }
 
-        private string NomeAltraCorsa(int numeroCorsa)
+        [ExtensibilityMethod]
+        public void SpostaCorsa(object numCorsa)
         {
-            if (_config.CorsaPreDessert.Corsa == numeroCorsa)
-                return "Pre-Dessert";
-            else if (_config.CorsaDessert.Corsa == numeroCorsa)
-                return "Dessert";
-            else if (_config.CorsaPetitFour.Corsa == numeroCorsa)
-                return "Petit Four";
-            else
-                return null;
+            if (!_extensionEnbled || !_coursemng_enable)
+            {
+                OpsContext.ShowMessage(messageSow("Estensione Non abilitata"));
+                myLog.Warn("527174B5 - Estensione Non abilitata");
+                return;
+            }
+            int sa;
+            foreach (CheckDetailItem riga in OpsContext.CheckContext.CheckDetail)
+            {
+                if (riga.DetailType == Micros.PosCore.Extensibility.Ops.CheckDetailType.DtlTypeMi)
+                    if (((Micros.PosCore.Extensibility.Ops.OpsMenuItemDetail)riga).DetailLink == OpsContext.CurrentParentItem)  //Trovato articolo selezionato  
+                    {                      
+                        if (riga != null)
+                        { AggiungiCondimentoCorsa(Convert.ToInt32(numCorsa)); }
+                    }
+            }
         }
 
-        private long? CondAltraCorsa(int numeroCorsa)
+        [ExtensibilityMethod]
+        public void VisCode()
         {
-            if (_config.CorsaPreDessert.Corsa == numeroCorsa)
-                return _config.CorsaPreDessert.Obj;
-            else if (_config.CorsaDessert.Corsa == numeroCorsa)
-                return _config.CorsaDessert.Obj; 
-            else if (_config.CorsaPetitFour.Corsa == numeroCorsa)
-                return _config.CorsaPetitFour.Obj;
-            else
-                return null;
+            OpsContext.ShowMessage(messageSow(OpsContext.PropHierStrucID.ToString()));
         }
-
+        
         [ExtensibilityMethod]
         public void TestComanda(object OrderDevice)
         {
@@ -2541,28 +2796,14 @@ namespace CourseMng
                 myLog.Warn("AC35B43F - Estensione Non abilitata");
                 return;
             }
-            int? successiva = GetCorsaSuccessiva(_CorseMarciate.Max());
+            int? successiva = _gestioneCorse.GetProssimaCorsaDaMarciare();
+
             if (successiva != null)
                EseguiMarcia(successiva.Value);
             else
-                OpsContext.ShowMessage("Le corse sono tutte marciate");
+               OpsContext.ShowMessage("Le corse sono tutte marciate");
         }
-
-        public int? GetCorsaSuccessiva(int corsaAttuale)
-        {
-            if (_CorseUsate == null || !_CorseUsate.Any())
-                return null;
-
-            // Filtra le corse nel HashSet che sono strettamente maggiori di quella attuale
-            var corseMaggiori = _CorseUsate.Where(c => c > corsaAttuale);
-
-            if (!corseMaggiori.Any())
-                return null;
-
-            // Restituisce il valore minimo tra quelle maggiori (il successivo immediato)
-            return corseMaggiori.Min();
-        }
-
+                
         [ExtensibilityMethod]
         public void RepeatMarcia()
         {
@@ -2572,8 +2813,8 @@ namespace CourseMng
                 myLog.Warn("AC35B43F - Estensione Non abilitata");
                 return;
             }
-
-            EseguiMarcia(_CorseMarciate.Max());
+            //EseguiMarcia(_CorseMarciate.Max());
+            EseguiMarcia(_gestioneCorse.GetUltimaCorsaMarciata());
         }
 
         [ExtensibilityMethod]
@@ -2590,49 +2831,6 @@ namespace CourseMng
 
         }
 
-        private void EseguiMarcia(int numCorsa)
-        {
-            try
-            {
-                if (OpsContext.Check == null || !_coursemng_enable || Convert.ToInt32(numCorsa) == 1 || Convert.ToInt32(numCorsa) > 20)
-                    return;
-
-                ImpostaCorsa(Convert.ToInt32(numCorsa));
-
-                OpsCommand cmdMarcia = new OpsCommand(OpsCommandType.MenuItem);
-
-
-                cmdMarcia.Number = _config.Marcia;
-
-                OpsCommand cmdSend = new OpsCommand(OpsCommandType.TenderMedia);
-                cmdSend.Number = _config.TM_SendOrder;
-
-                if (_config.VerbosityDisplay > 2)
-                {
-                    OpsContext.ShowMessage(messageSow(string.Format("Marcia {0}", numCorsa)));
-                }
-                myLog.Debug("Marcia {0}");
-
-                OpsContext.ProcessCommand(cmdMarcia);
-
-                _CorseMarciate.Add(Convert.ToInt32(numCorsa));
-                AumentaCorsa();
-                
-
-                if (_config.VerbosityDisplay > 1)
-                {
-                    OpsContext.ShowMessage(messageSow("Send Order"));
-                }
-                myLog.Debug("Send Order");
-                OpsContext.ProcessCommand(cmdSend);
-            }
-            catch (Exception ex)
-            {
-                OpsContext.ShowMessage(messageSow("Errore Marcia"));
-                myLog.Error("EAA72F2E - Errore Marcia", ex);
-            }
-        }
-
         [ExtensibilityMethod]
         public void Status()
         {
@@ -2640,6 +2838,7 @@ namespace CourseMng
             else
             { OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nGestione Corse abilitata {_coursemng_enable}\nGestione Menu abilitata {_menu_enable}")); }
         }
+
         public class ApplicationFactory : IExtensibilityAssemblyFactory
         {
             public ExtensibilityAssemblyBase Create(IExecutionContext context)

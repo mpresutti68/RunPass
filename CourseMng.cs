@@ -172,9 +172,9 @@ namespace CourseMng
         }
     }
 
-    
+
     public class MyConfig
-    
+
     {
         public bool Develop1 { get; set; }
 
@@ -619,7 +619,7 @@ namespace CourseMng
     {
         public static long LeggiInt(string codice8Cifre, long chiaveMolt = 7398213, long chiaveAdd = 59283714)
         {
-            long modulo = 100000000; 
+            long modulo = 100000000;
 
             if (!long.TryParse(codice8Cifre, out long cifratoInt))
             {
@@ -642,7 +642,7 @@ namespace CourseMng
             return numero5Cifre;
         }
 
-        
+
         private static long PosInt(long a, long m)
         {
             long m0 = m;
@@ -683,20 +683,233 @@ namespace CourseMng
     public class NomiCorse
     {
         [JsonProperty("CorsaNum")]
-        public int CorsaNum  { get; set; }
+        public int CorsaNum { get; set; }
         [JsonProperty("CorsaNome")]
         public string CorsaNome { get; set; }
 
     }
-
-    public class GestioneCorse
+    public class AggiornaDatiComandaEventArgs : EventArgs
     {
-        // Usiamo private set in modo che le liste possano essere modificate solo tramite i metodi di questa classe
-        private  HashSet<int> CorseMarciate { get; set; }
-        private  HashSet<int> CorseUsate { get;  set; }
-        private int CorsaIniziale { get; set; }
-        private int CorsaLimite { get; set; }
-        private int CorsaAttuale { get; set; }
+        public DatiComanda DatiComanda { get; private set; }
+        public AggiornaDatiComandaEventArgs(DatiComanda datiComanda)
+        {
+            DatiComanda = datiComanda;
+        }
+    }
+    public class GestioneCorse2
+    {
+        public event EventHandler AggiornaDatiComanda;
+        private int corsainiziale { get; set; }
+        private int corsalimite { get; set; }
+        private int corsaattuale { get; set; }
+        private HashSet<int> corsemarciate { get; set; }
+        private HashSet<int> corseusate { get; set; }
+        private bool inviatastampa { get; set; } = false;
+        private int corsapredessert { get; set; }
+        private int corsadessert { get; set; }
+        private int corsapetitfour { get; set; }
+
+        // COSTRUTTORE
+        public GestioneCorse2(int corsainiz, int corsalim, int predessert, int dessert, int petitfour)
+        {
+            corseusate = new HashSet<int>();
+            corsemarciate = new HashSet<int>();
+            corsainiziale = corsainiz;
+            corsalimite = corsalim;
+            corsaattuale = corsainiz;
+            corsapredessert = predessert;
+            corsadessert = dessert;
+            corsapetitfour = petitfour;
+            OnAggiornaDatiComanda();
+        }
+        // PROPRIETÀ PRIVATE
+        private enum TipoCorsaEnum
+        {
+            NoCourse = 0,
+            Base = 1,
+            AltraCorsa = 2,
+            NonGestita = 3
+        }
+        private TipoCorsaEnum TipoCorsa(int corsa)
+        {
+            if (corsa == 0) return TipoCorsaEnum.NoCourse;
+            else if (corsa >= corsainiziale && corsa <= corsalimite) return TipoCorsaEnum.Base;
+            else if (corsa >= corsalimite && corsa < 20) return TipoCorsaEnum.AltraCorsa;
+            return TipoCorsaEnum.NonGestita;
+        }
+        private bool SeCorsaMarciabile(int corsa)  //Se appartiene alle base o alle altre corse
+        { return TipoCorsa(corsa) == TipoCorsaEnum.Base || TipoCorsa(corsa) == TipoCorsaEnum.AltraCorsa; }
+        private bool SeCorsaUsabile(int corsa) //Se appartiene alle base o alle altre corse
+        { return TipoCorsa(corsa) == TipoCorsaEnum.Base; }
+        private bool SeCorsaIterabile(int corsa)  //Se appaartiene alle iterabile o alle altre corse
+        { return TipoCorsa(corsa) == TipoCorsaEnum.Base; }
+        private int UltimaCorsaUsata()
+        {
+            if (!corseusate.Any())
+                return 0;
+            var corseIterabili = corseusate.Where(c => SeCorsaIterabile (c));
+            if (!corseIterabili.Any())
+                return 0;
+            else
+                return corseIterabili.Max();
+        }
+        private bool SeCorsaMarciata(int corsa)
+        { return corsemarciate.Contains(corsa); }
+        private bool SeTutteMarciate()
+        { return corseusate.IsSubsetOf(corsemarciate); }
+        private void ImpostaCorsa()
+        {
+            if (UltimaCorsaMarciata() > 0)
+                corsaattuale = UltimaCorsaMarciata();
+            else
+                corsaattuale = corsainiziale;
+        }
+        public string OttieniStringaMarciate()
+        {
+            //HashSet<int> valori = _gestioneCorse.GetCorseMarciate();
+            // Controllo di sicurezza nel caso l'HashSet sia nullo
+            if (corsemarciate == null || corsemarciate.Count == 0)
+            {
+                return "Nessuna Marciata"; // Lista CorseMarciate Vuota
+            }
+
+            if (SeTutteMarciate() && SeCorsaUsata(corsaattuale)) // verifica che tutte le corse usate sono marciate e che quella corrente non è usata
+            {
+                return "Tutte Marciate";
+            }
+
+            var valoriModificati = corsemarciate.Select(v =>
+            {
+                if (TipoCorsa(v) == TipoCorsaEnum.AltraCorsa) return NomeAltraCorsa(v);
+
+                return v.ToString(); // Mantiene il numero originale per tutti gli altri
+            });
+
+            // Unisce i valori dell'HashSet separandoli con una virgola e uno spazio
+            string elencoValori = string.Join(", ", valoriModificati);
+
+            // Costruisce la stringa finale
+            return $"Marciate: {elencoValori}";
+        }
+        private string NomeAltraCorsa(int numeroCorsa)
+        {
+            if (corsapredessert == numeroCorsa)
+                return "Pre-Dessert";
+            else if (corsadessert == numeroCorsa)
+                return "Dessert";
+            else if (corsapetitfour == numeroCorsa)
+                return "petitFour";
+            else
+                return null;
+        }
+
+        // PROPRIETÀ PUBBLICHE
+        public int UltimaCorsaMarciata()
+        {
+            if (!corsemarciate.Any())
+                return 0;
+            return corsemarciate.Where(c => SeCorsaIterabile(c)).Max();
+        }
+        public bool SeCorsaUsata(int corsa)
+        { return corseusate.Contains(corsa); }
+        public int CorsaAttuale()
+        { return corsaattuale; }
+        public bool SeImmediata(int corsa)
+        { return SeCorsaMarciata(corsa); }
+        public bool SeCorsaAggiuntaAComandaFinita(int corsa) //Rispone true se si tratta di na corsa valida, nuova e tutte le altre sono state marciate
+        { return (SeTutteMarciate() && SeCorsaUsabile(corsa) && !SeCorsaUsata(corsa)); }
+        public int NextMarcia()
+        {
+            if (!corseusate.Any())
+                return 0;
+            var prossimecorsedamarciare = corseusate.Where(c => c > UltimaCorsaMarciata());
+            if (!prossimecorsedamarciare.Any())
+                return 0;
+            return prossimecorsedamarciare.Min();
+        }
+        public List<string> Intestazione()
+        {
+            List<string> intestazione = new List<string>();
+            intestazione.Add(testoMessaggio(string.Format("Corsa {0}", CorsaAttuale()), 40));
+            intestazione.Add(testoMessaggio(OttieniStringaMarciate(), 40));
+            return intestazione;    
+        }
+        //METODI PUBLICI
+        public void SetCorse(HashSet<int> parcorseusate, HashSet<int> parcorsemarciate)
+        {
+            corsemarciate = parcorsemarciate;
+            corseusate = parcorseusate;
+            OnAggiornaDatiComanda();
+        }
+        public void SetCorsa(int corsa)
+        {
+            if (SeCorsaUsabile(corsa)) 
+            { 
+                corsaattuale = corsa; 
+                OnAggiornaDatiComanda();
+            }
+        }
+        public void SetNextCorsa()
+        {
+            List<int> numeri = Enumerable.Range(1, corsalimite).ToList();
+            var corseIterabili = new List<int>();
+            int ultimaCorsaMarciata = UltimaCorsaMarciata();
+            if (corseusate.Any())
+            {
+                corseIterabili = numeri.Where(c => c > corsaattuale && c >= ultimaCorsaMarciata && c <= UltimaCorsaUsata() + 1 && c <= corsalimite).ToList();
+
+                if (corseIterabili.Any())
+                    corsaattuale = corseIterabili[0];
+                else
+                    corsaattuale = ultimaCorsaMarciata;
+                OnAggiornaDatiComanda();
+            }
+        }
+        public void AddMarciata(int corsa)
+        {
+            if (SeCorsaMarciabile(corsa)) // Modifica il parametro solo se la corsa è marciablie
+            {
+                corsemarciate.Add(corsa);
+                OnAggiornaDatiComanda();
+            }
+        }
+        public void AddUsata(int corsa)
+        { 
+            if (SeCorsaUsabile(corsa)) corsemarciate.Add(corsa);//Modifica il parametro solo se la corsa è usabile
+            if (corseusate.Count == 1) // Se la corsa usata è la prima, la aggiungiamo anche alle corse marciate
+            {
+                AddMarciata(corsa);
+            }
+            OnAggiornaDatiComanda();
+        }  
+        public void Stampata()
+        { inviatastampa = true; }
+        //METODI EVENTI
+        protected virtual void OnAggiornaDatiComanda()
+        {
+            AggiornaDatiComanda?.Invoke(this, EventArgs.Empty);
+        }
+        //METODI PRIVATI
+        private string testoMessaggio(string input, int lunghezzaTotale)
+        {
+            {
+                int lunginput = input.Length;
+                int lunglati = (lunghezzaTotale - lunginput) / 2;
+                string spaziSX = new string(' ', lunglati - 1);
+                string spaziDX = new string(' ', lunglati - 1);
+
+                return $"-{spaziSX}{input}{spaziDX}-";
+            }
+        }
+    }
+
+    /*public class GestioneCorse
+    {
+        public int CorsaIniziale { get; set; }
+        public int CorsaLimite { get; set; }
+        public int CorsaAttuale { get; set; }
+        private HashSet<int> CorseMarciate { get; set; }
+        private HashSet<int> CorseUsate { get; set; }
         private bool InviataStampa { get; set; }
         public GestioneCorse(int corsainiz, int corsalim, bool inviataStampa = false)
         {
@@ -892,7 +1105,7 @@ namespace CourseMng
                     CorsaAttuale = ultimaCorsaMarciata;
             }
         }
-    }
+    }*/
 
     public interface ICorseRepository
     {
@@ -1245,7 +1458,7 @@ namespace CourseMng
         private string _connStringSqlServer = "Server=LocalHost\\SQlExpress;Database=datastore;";
         private string _account = "Uid=chkrdy;Pwd=chkrdy1$;";
         private string _connString = "";
-        private GestioneCorse _gestioneCorse;
+        private GestioneCorse2 _gestioneCorse;
         private IDbConnectionFactory _dbFactory;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _processedPrints =
                 new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
@@ -1881,7 +2094,7 @@ namespace CourseMng
                     // Corsa -- testo grande, grassetto e invertito (se la corsa è già marciata),  centrato --
                     corpo.AddRange(EscPos.AlignCenter);
 
-                    if (_gestioneCorse.GetIfCorsaMarciata(numcorsa))
+                    if (_gestioneCorse.SeImmediata(numcorsa))
                     {
                         corpo.AddRange(EscPos.TextNormal);
                         corpo.AddRange(EscPos.NoColorInv);
@@ -2221,8 +2434,8 @@ namespace CourseMng
             
             _coursemng_enable = _config.RvcCourseMng.Contains(OpsContext.RvcNumber) ;
             _menu_enable = _config.RvcMenu.Contains(OpsContext.RvcNumber) && _config.Suite.Count >0; // il menu è attivo se il revenue center fa parte della lista e l'elenco dei suite non è vuoto
-            _gestioneCorse = new GestioneCorse(_config.CorsaIniziale,_config.CorsaLimite, !NewCheck); //Inizializza la classe GestioneCorse con la corsa iniziale, la corsa limite e il flag per l'apertura conto (per indicare se è già stata stampata)
-
+            _gestioneCorse = new GestioneCorse2(_config.CorsaIniziale,_config.CorsaLimite, _config.CorsaPreDessert.Corsa, _config.CorsaDessert.Corsa, _config.CorsaPetitFour.Corsa); //Inizializza la classe GestioneCorse con la corsa iniziale, la corsa limite e il flag per l'apertura conto (per indicare se è già stata stampata)
+            _gestioneCorse.AggiornaDatiComanda += AggiornaCorsa;
             if ((_device is null || _actual_Rvc != OpsContext.RvcID))
             {
                 try
@@ -2240,9 +2453,8 @@ namespace CourseMng
             
             if (OpsContext.Check != null && _coursemng_enable && !NewCheck)
             {
-                
-                //_CorseMarciate.Add(1);
-                //_gestioneCorse.AggiungiCorsaMarciata(1);
+                HashSet<int> corsemarciate = new HashSet<int>();
+                HashSet<int> corseusate = new HashSet<int>();
                 if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(messageSow("Cerca Marcia"));
                 foreach (CheckDetailItem riga in OpsContext.CheckDetail)
                 {
@@ -2251,20 +2463,20 @@ namespace CourseMng
                         if (_config.VerbosityDisplay > 3) OpsContext.ShowMessage(messageSow(string.Format("Articolo {0}", riga.Name)));
                         if (articolo.MiObjNum == _config.Marcia || articolo.MiObjNum == _config.Marciato)
                         {
-                            //_CorseMarciate.Add(articolo.KdsCourseNum);
-                            _gestioneCorse.AggiungiCorsaMarciata(articolo.KdsCourseNum);
+                            corsemarciate.Add(articolo.KdsCourseNum);
                         }
                         //_CorseUsate.Add(articolo.KdsCourseNum);
-                        _gestioneCorse.AggiungiCorsaUsata(articolo.KdsCourseNum);
+                        corseusate.Add(articolo.KdsCourseNum);
                     }
                 }
-                _gestioneCorse.ImpostaCorsaAttuale();
-                AggiornaCorsa();
+                //_gestioneCorse.ImpostaCorsaAttuale();
+                //AggiornaCorsa();
+                _gestioneCorse.SetCorse(corseusate, corsemarciate);
             }
-            else if (NewCheck)
-            {
-                AggiornaCorsa();
-            }
+            // else if (NewCheck)
+            //{
+            //    AggiornaCorsa();
+            //}
 
             /*if (OpsContext.Check != null && _coursemng_enable)
             {
@@ -2316,57 +2528,49 @@ namespace CourseMng
                 if (!args.MiClass.OptionBits.CheckBit(2) && args.MiClass.OptionBits.CheckBit(45) && _coursemng_enable && _extensionEnbled)
                     try
                     {
-                        int valoreCorsa = _gestioneCorse.GetCorsaAttuale(); 
+                        int valoreCorsa = _gestioneCorse.CorsaAttuale(); 
                         int valore;
 
-                        if (valoreCorsa > 0)
+                        dynamic argsDinamico = args;
+                        try
                         {
-                            dynamic argsDinamico = args;
-                            try
-                            {
+                            if (OpsContext.CheckContext == null || OpsContext.CheckContext.CheckDetail == null)
+                                return EventProcessingInstruction.Continue;
 
-                                if (OpsContext.CheckContext == null || OpsContext.CheckContext.CheckDetail == null)
-                                    return EventProcessingInstruction.Continue;
-
-                                dynamic articolo = OpsContext.CheckContext.CheckDetail[OpsContext.CheckContext.CheckDetail.Count - 1];
+                            dynamic articolo = OpsContext.CheckContext.CheckDetail[OpsContext.CheckContext.CheckDetail.Count - 1];
                                 
-                                OpsCommand cmdCondimento = new OpsCommand(OpsCommandType.MenuItem);
-                                if (articolo != null)
-                                {
-                                    valore = articolo.KdsCourseNum;
-                                   
-                                    if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
-                                    {
-                                        cmdCambioCorsa(valoreCorsa);
-                                    }
-                                    else  //L'articolo ha una corsa assegnata
-                                    {
-                                        if (valore >= 15 && valore <= 17 && !_gestioneCorse.GetIfCorsaUsata(valore) && (_gestioneCorse.GetIfTutteCorseMarciate() || _gestioneCorse.GetIfIsOnlyCourse(valore)))   //verifica se si tratta di una corsa 'aggiuntiva' e che non sia già presente e che siano tutte marciate
-                                        {
-                                            _gestioneCorse.AggiungiCorsaUsata(valore);
-                                            bool risposta = OpsContext.AskQuestion("Tutte le altre corse sono marciate. Procedo anche con questa?");
-                                            if (risposta)
-                                            {
-                                                // Procedo con la preparazione immediata
-                                              
-                                                EseguiMarcia(valore, true);
-                                                
-                                                //_gestioneCorse.AggiungiCorsaMarciata(valore);
-                                            }
-                                            
-                                        }
-                                     }
-                                    _gestioneCorse.ImpostaCorsaAttuale();
-                                    AggiornaCorsa();
-                                }
-                            }
-                            
-                            catch (Exception ex)
+                            //    OpsCommand cmdCondimento = new OpsCommand(OpsCommandType.MenuItem);
+                            if (articolo != null)
                             {
-                                OpsContext.ShowMessage(messageSow("Errore!! "));
-                                myLog.Error("9B426026 Errore aggiunta articolo", ex);
+                                valore = articolo.KdsCourseNum;
+                                if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
+                                {
+                                    cmdCambioCorsa(valoreCorsa);
+                                }
+                                else
+                                { valoreCorsa=valore; } //se l'articolo ha una corsa, la variabile valoreCorsa viene aggiornata con il valore della corsa dell'articolo
+                                if (_gestioneCorse.SeCorsaAggiuntaAComandaFinita(valoreCorsa))   //verifica se si tratta di una corsa 'aggiuntiva' e che non sia già presente e che siano tutte marciate
+                                    {
+                                        
+                                        bool risposta = OpsContext.AskQuestion("Tutte le altre corse sono marciate. Procedo anche con questa?");
+                                        if (risposta)
+                                        {
+                                            // Procedo con la preparazione immediata
+                                            EseguiMarcia(valore, true);
+                                            //_gestioneCorse.AggiungiCorsaMarciata(valore);
+                                        }                                            
+                                    }
+                                _gestioneCorse.AddUsata(valoreCorsa);
+                                //_gestioneCorse.ImpostaCorsaAttuale();
+                                //AggiornaCorsa();
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            OpsContext.ShowMessage(messageSow("Errore!! "));
+                            myLog.Error("9B426026 Errore aggiunta articolo", ex);
+                        }
+                        
                     }
                     catch (Exception ex)
                     {
@@ -2570,42 +2774,16 @@ namespace CourseMng
 
             
             if (numCorsa != null)
-                _gestioneCorse.ImpostaCorsaAttuale((int)numCorsa);
+                _gestioneCorse.SetCorsa((int)numCorsa);
 
-            if (aggCorsa)
-                AggiornaCorsa();
+            //if (aggCorsa)
+            //    AggiornaCorsa();
 
         }
 
-        public string OttieniStringaMarciate()
-        {
-            HashSet<int> valori = _gestioneCorse.GetCorseMarciate();
-            // Controllo di sicurezza nel caso l'HashSet sia nullo
-            if (valori == null || valori.Count == 0)
-            {
-                return "Nessuna Marciata"; // Lista CorseMarciate Vuota
-            }
+        /**/
 
-            if (_gestioneCorse.GetIfTutteCorseMarciate() && _gestioneCorse.GetIfCorsaAttualeUsata()) // verifica che tutte le corse usate sono marciate e che quella corrente non è usata
-            {
-                return "Tutte Marciate";
-            }
-
-            var valoriModificati = valori.Select(v =>
-            {
-                if (v >= 15 && v <=16) return NomeAltraCorsa(v);
-
-                return v.ToString(); // Mantiene il numero originale per tutti gli altri
-            });
-
-            // Unisce i valori dell'HashSet separandoli con una virgola e uno spazio
-            string elencoValori = string.Join(", ", valoriModificati);
-
-            // Costruisce la stringa finale
-            return $"Marciate: {elencoValori}";
-        }
-
-        private void AggiornaCorsa()
+        private void AggiornaCorsa(object sender, EventArgs e)
         {
             if (!_extensionEnbled || !_coursemng_enable)
             {
@@ -2615,42 +2793,36 @@ namespace CourseMng
             }
             if (OpsContext.Check == null)
                 return;
-                       
-            OpsContext.Check.ExtensibilityDetail.RemoveAll(this.ApplicationName); //Pulisce schermo
-            
+
+            OpsContext.Check.ExtensibilityDetail.RemoveAll(this.ApplicationName);  //Pulisce schermo
+            List<string> intestazione = _gestioneCorse.Intestazione();
+
+
             //Scrive Label Corsa attuale
-            ExtensibilityDataInfo CorsaCorrente = new ExtensibilityDataInfo(testoMessaggio(string.Format("Corsa {0}", _gestioneCorse.GetCorsaAttuale()), 40), "CorsaCorrente", "");
+            //ExtensibilityDataInfo CorsaCorrente = new ExtensibilityDataInfo(testoMessaggio(string.Format("Corsa {0}", _gestioneCorse.GetCorsaAttuale()), 40), "CorsaCorrente", "");
+            ExtensibilityDataInfo CorsaCorrente = new ExtensibilityDataInfo(intestazione[0], "CorsaCorrente", "");
             CorsaCorrente.SetPrintOnDisplayOnly();
             OpsContext.Check.AddExtensibilityData(CorsaCorrente);
 
-            //Se immediata scrive label
-            bool immediata = _gestioneCorse.GetIfCorsaAttualeMarciata() || _gestioneCorse.GetNessunaMarciata(); //Se la corsa attuale è marciata oppure nessuna corsa è marcia è Immediata
-            if (!immediata)
-            {
-                ExtensibilityDataInfo infoAseguire = new ExtensibilityDataInfo(testoMessaggio("A seguire", 40), "NoteCorsa", "");
-                infoAseguire.SetPrintOnDisplayOnly();
-                OpsContext.Check.AddExtensibilityData(infoAseguire);
-            }
-
             //Scrive label corse marciate
-            ExtensibilityDataInfo CorseMarciate = new ExtensibilityDataInfo(testoMessaggio(OttieniStringaMarciate(), 40), "CorseMarciate", "");
+            //ExtensibilityDataInfo CorseMarciate = new ExtensibilityDataInfo(testoMessaggio(OttieniStringaMarciate(), 40), "CorseMarciate", "");
+            ExtensibilityDataInfo CorseMarciate = new ExtensibilityDataInfo(intestazione[1], "CorseMarciate", "");
             CorseMarciate.SetPrintOnDisplayOnly();
             OpsContext.Check.AddExtensibilityData(CorseMarciate);
 
+            //Se immediata scrive label
+            //bool immediata = _gestioneCorse.GetIfCorsaAttualeMarciata() || _gestioneCorse.GetNessunaMarciata(); //Se la corsa attuale è marciata oppure nessuna corsa è marcia è Immediata
+            if (intestazione.Count==3)
+            {
+                //ExtensibilityDataInfo infoAseguire = new ExtensibilityDataInfo(testoMessaggio("A seguire", 40), "NoteCorsa", "");
+                ExtensibilityDataInfo infoAseguire = new ExtensibilityDataInfo(intestazione[2], "NoteCorsa", "");
+                infoAseguire.SetPrintOnDisplayOnly();
+                OpsContext.Check.AddExtensibilityData(infoAseguire);
+            }
             OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.Refresh));
         }
-
-        private string testoMessaggio(string input, int lunghezzaTotale)
-        {
-            {
-                int lunginput = input.Length;
-                int lunglati = (lunghezzaTotale - lunginput) / 2;
-                string spaziSX = new string(' ', lunglati - 1);
-                string spaziDX = new string(' ', lunglati - 1);
-
-                return $"-{spaziSX}{input}{spaziDX}-";
-            }
-        }
+        
+        
 
         private long? CondAltraCorsa(int numeroCorsa)
         {
@@ -2680,15 +2852,9 @@ namespace CourseMng
         {
             try
             {
-                if (OpsContext.Check == null || !_coursemng_enable || Convert.ToInt32(numCorsa) == 1 || !_gestioneCorse.GetIfCorsaUsata(numCorsa))
+                if (OpsContext.Check == null || !_coursemng_enable || Convert.ToInt32(numCorsa) == 1 || !_gestioneCorse.SeCorsaUsata(numCorsa))
                     return;
-
-                _gestioneCorse.ImpostaCorsaAttuale(numCorsa, !onlyMarker); //Se OnlyMarker non limita le corse alle prime 14
-
-                OpsCommand cmdSend = new OpsCommand(OpsCommandType.TenderMedia);
-
-                cmdSend.Number = _config.TM_SendOrder;
-
+                
                 if (_config.VerbosityDisplay > 2)
                 {
                     OpsContext.ShowMessage(messageSow(string.Format("Marcia {0}", numCorsa)));
@@ -2700,11 +2866,14 @@ namespace CourseMng
                     OpsCommand cmdMarcia = new OpsCommand(OpsCommandType.MenuItem);
                     cmdMarcia.Number = _config.Marcia;
                     OpsContext.ProcessCommand(cmdMarcia);
+                    cmdCambioCorsa(numCorsa);
                     if (_config.VerbosityDisplay > 1)
                     {
                         OpsContext.ShowMessage(messageSow("Send Order"));
                     }
                     myLog.Debug("Send Order");
+                    OpsCommand cmdSend = new OpsCommand(OpsCommandType.TenderMedia);
+                    cmdSend.Number = _config.TM_SendOrder;
                     OpsContext.ProcessCommand(cmdSend);
                 }
                 else
@@ -2712,8 +2881,9 @@ namespace CourseMng
                     OpsCommand cmdMarciato = new OpsCommand(OpsCommandType.MenuItem);
                     cmdMarciato.Number = _config.Marciato;
                     OpsContext.ProcessCommand(cmdMarciato);
+                    cmdCambioCorsa(numCorsa);
                 }
-                _gestioneCorse.AggiungiCorsaMarciata(Convert.ToInt32(numCorsa));
+                _gestioneCorse.AddMarciata(Convert.ToInt32(numCorsa));
             }
             catch (Exception ex)
             {
@@ -2749,7 +2919,7 @@ namespace CourseMng
             {
                 OpsContext.ProcessCommand(cmdCondimento);
                 OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.Void));
-                _gestioneCorse.AggiungiCorsaUsata(numCorsa);
+                //_gestioneCorse.AggiungiCorsaUsata(numCorsa);
             }
         }
 
@@ -2783,9 +2953,9 @@ namespace CourseMng
 
             if (OpsContext.Check != null)
             {
-                _gestioneCorse.ImpostaCorsaSuccessivaSelezionabile();
+                _gestioneCorse.SetNextCorsa();
                 //ImpostaCorsa();
-                AggiornaCorsa();
+                //AggiornaCorsa();
             }
             else
             {
@@ -2805,8 +2975,8 @@ namespace CourseMng
 
             if (OpsContext.Check != null)
             {
-                _gestioneCorse.ImpostaCorsaAttuale(Convert.ToInt32(numCorsa));
-                AggiornaCorsa();
+                _gestioneCorse.SetCorsa(Convert.ToInt32(numCorsa));
+                //AggiornaCorsa();
             }
             else
             {
@@ -2879,7 +3049,7 @@ namespace CourseMng
                 myLog.Warn("AC35B43F - Estensione Non abilitata");
                 return;
             }
-            int? successiva = _gestioneCorse.GetProssimaCorsaDaMarciare();
+            int? successiva = _gestioneCorse.NextMarcia();
 
             if (successiva != null)
                EseguiMarcia(successiva.Value);
@@ -2897,7 +3067,7 @@ namespace CourseMng
                 return;
             }
             //EseguiMarcia(_CorseMarciate.Max());
-            EseguiMarcia(_gestioneCorse.GetUltimaCorsaMarciata());
+            EseguiMarcia(_gestioneCorse.UltimaCorsaMarciata());
         }
 
         [ExtensibilityMethod]

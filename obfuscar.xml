@@ -24,7 +24,7 @@
   <Var name="SuppressIldasm" value="true" />
 
   <!-- Specifica l'assembly (o gli assembly) da offuscare -->
-  <Module file="$(InPath)\CourseMng.dll">
+  <Module file="$(InPath)\RunPass.dll">
     
     <!-- ESEMPIO DI ESCLUSIONE 1: Escludere un'intera classe (es. il punto di ingresso o l'interfaccia principale) -->
 	<!-- SkipType name="PosTerminalExtension.Core.PluginEntryPoint" /> -->

@@ -16,6 +16,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Resources;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Remoting.Contexts;
 using System.Runtime.Remoting.Messaging;
 using System.Security.Policy;
@@ -36,9 +37,9 @@ using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using static System.Net.Mime.MediaTypeNames;
 using static Mysqlx.Expect.Open.Types.Condition.Types;
+using System.Numerics;
 
-
-namespace CourseMng
+namespace RunPass
 {
     public interface IDbConnectionFactory
     {
@@ -153,7 +154,7 @@ namespace CourseMng
         {
             try
             {
-                string fileName = $"SimphonyExt_{DateTime.Now:yyyyMMdd}.log";
+                string fileName = $"RunPassExt_{DateTime.Now:yyyyMMdd}.log";
                 string fullPath = Path.Combine(_logFolderPath, fileName);
                 string formattedEntry = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}{Environment.NewLine}";
 
@@ -182,7 +183,11 @@ namespace CourseMng
 
         public int VerbosityDisplay { get; set; } = 0;
 
-        public long RTT_ID { get; set; }
+        public string RTT_ID { get; set; }
+
+        public int MeseScadenza { get; set; }
+
+        public int AnnoScadenza { get; set; }
 
         public int VerbosityLog { get; set; }
 
@@ -632,6 +637,71 @@ namespace CourseMng
         public List<CondimentPrint> condiments { get; set; }
     }
 
+    public class FloorZero
+    {
+        private const long CHIAVE_MOLT = 4398213;
+        private const long CHIAVE_ADD = 8549320184;
+        private const long MODULO = 1000000000000;
+        private const int IDAPPLICAZIONE = 1;
+
+        public static (int ClienteId, int Mese, int Anno) LeggiDati(string codice)
+        {
+            if (string.IsNullOrWhiteSpace(codice))
+                throw new ArgumentException("Il codice di licenza non può essere vuoto.");
+
+            string codicePulito = codice.Replace("-", "").Replace(" ", "");
+
+            if (codicePulito.Length != 12)
+                throw new ArgumentException("Il codice di licenza deve contenere 12 cifre.");
+
+            if (!long.TryParse(codicePulito, out long cifrato_int))
+                throw new ArgumentException("Il codice contiene caratteri non validi.");
+
+            long inverso_moltiplicativo = CalcolaInversoModulare(CHIAVE_MOLT, MODULO);
+
+            BigInteger temp_base = new BigInteger(cifrato_int) - CHIAVE_ADD;
+            temp_base = (temp_base * inverso_moltiplicativo) % MODULO;
+
+            if (temp_base < 0)
+                temp_base += MODULO;
+
+            long numero_base = (long)temp_base;
+
+            int app_estratta = (int)(numero_base % 10);
+            int mese_estratto = (int)((numero_base / 10) % 100);
+            int anno_estratto = (int)((numero_base / 1000) % 100);
+            int id_estratto = (int)(numero_base / 100000);
+
+            if (app_estratta != IDAPPLICAZIONE)
+                throw new InvalidOperationException($"Codice licenza non valido. Atteso per App: {IDAPPLICAZIONE}, Trovato per App: {app_estratta}.");
+
+            return (id_estratto, mese_estratto, anno_estratto);
+        }
+
+        private static long CalcolaInversoModulare(long a, long m)
+        {
+            long m0 = m;
+            long y = 0, x = 1;
+
+            if (m == 1) return 0;
+
+            while (a > 1)
+            {
+                long q = a / m;
+                long t = m;
+
+                m = a % m;
+                a = t;
+                t = y;
+
+                y = x - q * y;
+                x = t;
+            }
+
+            if (x < 0) x += m0;
+            return x;
+        }
+    }
     public class TestWork
     {
         public static long LeggiInt(string codice8Cifre, long chiaveMolt = 7398213, long chiaveAdd = 59283714)
@@ -1472,7 +1542,7 @@ namespace CourseMng
         }
         private EventProcessingInstruction GestInitEvent(object sender, OpsInitEventArgs args)
         {
-            myLog.Info("Estensione Simphony avviata con successo.");
+            myLog.Info("Estensione RunPass avviata con successo.");
 
             //var dataStore = this.DataStore;
 
@@ -1483,14 +1553,19 @@ namespace CourseMng
                 myLog.UpdateVerbosity(_config.VerbosityLog);
             }
 
-            long codreq = TestWork.LeggiInt(_config.RTT_ID.ToString());
-
             _codificaStampante = Encoding.GetEncoding(_config.CodificaStampante);
 
-            if (OpsContext.PropHierStrucID != codreq)
+            //long codreq = TestWork.LeggiInt(_config.RTT_ID.ToString());
+            var codreq = FloorZero.LeggiDati(_config.RTT_ID.ToString());
+            _config.AnnoScadenza = codreq.Anno;
+            _config.MeseScadenza = codreq.Mese;
+
+            bool codeValid = (OpsContext.PropHierStrucID.ToString() == (codreq.ClienteId.ToString().Substring(0, OpsContext.PropHierStrucID.ToString().Length)));
+            bool codeExpired =(_config.AnnoScadenza < DateTime.Now.Year % 100 || _config.MeseScadenza < DateTime.Now.Month % 100);
+            if (!codeValid || codeExpired)
             {
-                OpsContext.ShowMessage(messageSow("Codice non valido, extension disabilitata"));
-                myLog.Warn("Codice non valido, extension disabilitata");
+                OpsContext.ShowMessage(messageSow("Codice non valido o scaduto, extension disabilitata"));
+                myLog.Warn("Codice non valido o scaduto, extension disabilitata");
                 _menu_enable = false;
                 _coursemng_enable = false;
                 _extensionEnbled = false;
@@ -1768,7 +1843,7 @@ namespace CourseMng
 
         private string messageSow(string origMessage)
         {
-            return $"CourseMng:\r\n{origMessage}";
+            return $"RunPass:\r\n{origMessage}";
         }
 
         private EventProcessingInstruction GestOpsCustomOrderDeviceEventArgs(object sender, OpsCustomOrderDeviceEventArgs args)
@@ -2950,7 +3025,7 @@ namespace CourseMng
                 OpsCommand cmdMarciato = new OpsCommand(OpsCommandType.MenuItem);
                 cmdMarciato.Number = _config.Marciato;
                 OpsContext.ProcessCommand(cmdMarciato);
-                cmdCambioCorsa(((CourseMng.AggiungiMarciatoArgs)e).corsadamarciare);
+                cmdCambioCorsa(((RunPass.AggiungiMarciatoArgs)e).corsadamarciare);
             }
         }
         private void EseguiMarcia2(int numCorsa, bool forzarepeat=false)
@@ -3279,7 +3354,7 @@ namespace CourseMng
         {
             if (!_extensionEnbled) OpsContext.ShowMessage(messageSow("Estensione Disabilitata"));
             else
-            { OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nGestione Corse abilitata {_coursemng_enable}\nGestione Menu abilitata {_menu_enable}")); }
+            { OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nScadenza {_config.MeseScadenza}/{_config.AnnoScadenza}\nGestione Corse abilitata {_coursemng_enable}\nGestione Menu abilitata {_menu_enable}")); }
         }
 
         public class ApplicationFactory : IExtensibilityAssemblyFactory

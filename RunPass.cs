@@ -13,6 +13,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
+using System.Numerics;
 using System.Reflection;
 using System.Resources;
 using System.Runtime.CompilerServices;
@@ -37,10 +38,114 @@ using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
 using static System.Net.Mime.MediaTypeNames;
 using static Mysqlx.Expect.Open.Types.Condition.Types;
-using System.Numerics;
+using static RunPass.GestioneCorse;
 
 namespace RunPass
 {
+    public class RunPassLogic : IDisposable
+    {
+        private IntPtr _nativeInstance;
+
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private static extern IntPtr CreateRunPassLogic(string codiceLicenza, long idverifica);
+
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void DestroyRunPassLogic(IntPtr instance);
+
+        //[DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+        //private static extern bool LM_IsValida(IntPtr instance);
+
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int LM_GetMese(IntPtr instance);
+
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int LM_GetAnno(IntPtr instance);
+
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int LM_CCSI(
+            IntPtr instance, int ci, int cl, int ca,
+            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 5)] int[] cmArr, int cmSize,
+            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 7)] int[] cuArr, int cuSize
+        );
+
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int LM_TPNMI(
+            IntPtr instance,
+            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] int[] cmArr, int cmSize,
+            [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 4)] int[] cuArr, int cuSize
+        );
+
+        public RunPassLogic(string codiceLicenza, long idverifica)
+        {
+            _nativeInstance = CreateRunPassLogic(codiceLicenza, idverifica);
+            /*if (_nativeInstance == IntPtr.Zero || !LM_IsValida(_nativeInstance))
+            {
+                throw new UnauthorizedAccessException("Licenza non valida o codice errato.");
+            }*/
+        }
+
+        public int EseguiCCS(int ci, int cl, int ca, int[] cm, int[] cu)
+        {
+            return LM_CCSI(_nativeInstance, ci, cl, ca, cm, cm?.Length ?? 0, cu, cu?.Length ?? 0);
+        }
+
+        public int EseguiTPNM(int[] cm, int[] cu)
+        {
+            return LM_TPNMI(_nativeInstance, cm, cm?.Length ?? 0, cu, cu?.Length ?? 0);
+        }
+        public int MeseScadenza()
+        {
+            return LM_GetMese(_nativeInstance);
+        }
+
+        public int AnnoScadenza()
+        {
+           return LM_GetAnno(_nativeInstance);
+        }
+
+        public void Dispose()
+        {
+            if (_nativeInstance != IntPtr.Zero)
+            {
+                DestroyRunPassLogic(_nativeInstance);
+                _nativeInstance = IntPtr.Zero;
+            }
+        }
+    }
+
+    public class SecurityManager
+    {
+        // Dichiariamo l'importazione della funzione nativa C++
+        // Usiamo 'out int' per mappare automaticamente i puntatori 'int*' del C++
+        [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)] // Garantisce la corretta conversione del bool tra C++ e C#
+        private static extern bool DecodificaLicenza(string codice, out int clienteId, out int mese, out int anno);
+
+        // La funzione che hai richiesto, con la tua stessa firma
+        public static (int ClienteId, int Mese, int Anno) LeggiDati(string codice)
+        {
+            if (string.IsNullOrWhiteSpace(codice))
+                throw new ArgumentException("Il codice di licenza non può essere vuoto.");
+
+            string codicePulito = codice.Replace("-", "").Replace(" ", "");
+
+            if (codicePulito.Length != 12)
+                throw new ArgumentException("Il codice di licenza deve contenere 12 cifre.");
+
+            if (!long.TryParse(codicePulito, out _))
+                throw new ArgumentException("Il codice contiene caratteri non validi.");
+
+            // La logica complessa è ora delegata alla DLL invisibile
+            bool successo = DecodificaLicenza(codicePulito, out int id_estratto, out int mese_estratto, out int anno_estratto);
+
+            // Se la DLL ritorna false, significa che i calcoli hanno fallito o l'app_estratta != IDAPPLICAZIONE
+            if (!successo)
+                throw new InvalidOperationException("Codice licenza non valido o applicazione errata.");
+
+            return (id_estratto, mese_estratto, anno_estratto);
+        }
+    }
+
     public interface IDbConnectionFactory
     {
         int TipoDB { get; }
@@ -178,8 +283,6 @@ namespace RunPass
     {
         public int Testmode { get; set; } = 0;
         public string RTT_ID { get; set; }
-        public int MeseScadenza { get; set; }
-        public int AnnoScadenza { get; set; }
         public int CodificaStampante { get; set; } = 850;
         public List<int> RvcCourseMng { get; set; } = new List<int>();
         public List<int> RvcMenu { get; set; } = new List<int>();
@@ -594,7 +697,7 @@ namespace RunPass
         public List<CondimentPrint> condiments { get; set; }
     }
 
-    public class FloorZero
+    /*public class FloorZero
     {
         private const long CHIAVE_MOLT = 4398213;
         private const long CHIAVE_ADD = 8549320184;
@@ -658,7 +761,7 @@ namespace RunPass
             if (x < 0) x += m0;
             return x;
         }
-    }
+    }*/
 
     public class DatiComanda
     {
@@ -697,18 +800,65 @@ namespace RunPass
             corsadamarciare = corsa;
         }
     }
-        
+
     public class GestioneCorse
     {
-        
-        
-        //public int primacorsa { get; private set; }
-        //public HashSet<int> corseusate { get; private set; }
-        
-        //public int corsapredessert { get; private set; }
-        //public int corsadessert { get; private set; }
-        //public int corsapetitfour { get; private set; }
+        /*public class CorseManager
+        {
+            // Sostituisci "NomeDellaTuaLibreria.dll" con il nome reale della DLL generata dal C++
+            [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+            private static extern int CCSI(
+                int corsaIniziale,
+                int corsaLimite,
+                int corsaAttuale,
+                int[] corseMarciateArr,
+                int corseMarciateSize,
+                int[] corseUsateArr,
+                int corseUsateSize);
 
+            [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
+            private static extern int TPNMI(
+                int[] corseMarciateArr,
+                int corseMarciateSize,
+                int[] corseUsateArr,
+                int corseUsateSize);
+
+            /// <summary>
+            /// Calcola la corsa successiva interfacciandosi con la libreria C++ unmanaged
+            /// </summary>
+            public int CalcolaCorsaSuccessiva(int corsaIniziale, int corsaLimite, int corsaAttuale, List<int> corseMarciate, List<int> corseUsate)
+            {
+                // Gestione di sicurezza nel caso arrivino liste nulle
+                int[] arrMarciate = corseMarciate != null ? corseMarciate.ToArray() : Array.Empty<int>();
+                int[] arrUsate = corseUsate != null ? corseUsate.ToArray() : Array.Empty<int>();
+
+                // Chiamata alla DLL
+                return CCSI(
+                    corsaIniziale,
+                    corsaLimite,
+                    corsaAttuale,
+                    arrMarciate,
+                    arrMarciate.Length,
+                    arrUsate,
+                    arrUsate.Length);
+            }
+
+            public int CalcolaMarciaSuccessiva(List<int> corseMarciate, List<int> corseUsate)
+            {
+                // Gestione di sicurezza nel caso arrivino liste nulle
+                int[] arrMarciate = corseMarciate != null ? corseMarciate.ToArray() : Array.Empty<int>();
+                int[] arrUsate = corseUsate != null ? corseUsate.ToArray() : Array.Empty<int>();
+
+                // Chiamata alla DLL
+                return TPNMI(
+                    arrMarciate,
+                    arrMarciate.Length,
+                    arrUsate,
+                    arrUsate.Length);
+            }
+        }
+        private CorseManager corsaManager = new CorseManager();*/
+        private RunPassLogic corsaManager;
         public int corsainiziale { get; private set; }
         public int corsalimite { get; private set; }
         public int corsaattuale { get; private set; }
@@ -721,7 +871,7 @@ namespace RunPass
         public bool inviatastampa { get; private set; } = false;
 
         // COSTRUTTORE
-        public GestioneCorse(int corsainiz, int corsalim, Dictionary<int, string> paraltrecorse )//, int predessert, int dessert, int petitfour)
+        public GestioneCorse(int corsainiz, int corsalim, Dictionary<int, string> paraltrecorse, RunPassLogic rpl )//, int predessert, int dessert, int petitfour)
         {
             //corseusate = new HashSet<int>();
             //corsapredessert = predessert;
@@ -736,6 +886,7 @@ namespace RunPass
             corsainiziale = corsainiz;
             corsalimite = corsalim;
             corsaattuale = corsainiz;
+            corsaManager = rpl;
             
         }
 
@@ -767,7 +918,7 @@ namespace RunPass
         }
         private bool SePrimaCorsa(int corsa)
         { return (corseattuali.Count == 0); }
-        private int UltimaCorsaUsata()
+        /*private int UltimaCorsaUsata()
         {
             if (corseattuali.Count == 0)
                 return 0;
@@ -777,7 +928,7 @@ namespace RunPass
                 return 0;
             else
                 return corseIterabili.Max();
-        }
+        }*/
         private bool SeTutteMarciate()
         {
             HashSet<int> corseusate = new HashSet<int>(corseattuali.Keys);
@@ -818,7 +969,7 @@ namespace RunPass
             // Costruisce la stringa finale
             return $"Marciate: {elencoValori}";
         }
-       private string NomeAltraCorsa(int numeroCorsa)
+        private string NomeAltraCorsa(int numeroCorsa)
         {
             /*if (corsapredessert == numeroCorsa)
                 return "Pre-Dessert";
@@ -859,14 +1010,14 @@ namespace RunPass
         { return corseattuali.ContainsKey(corsa); }
         public bool SeCorsaMarciata(int corsa)
         { return corsemarciate.Contains(corsa); }
-        public bool SeCorsaBloccata(int corsa)
+        /*public bool SeCorsaBloccata(int corsa)
         { 
             int ultcorsamarciata = UltimaCorsaMarciata();
             HashSet<int> corseusatenonbloccate = new HashSet<int>(corseattuali.Keys);
             corseusatenonbloccate.RemoveWhere(c => !SeCorsaIterabile(c));
             corseusatenonbloccate.RemoveWhere(c => (SeCorsaMarciata(c) && (c != ultcorsamarciata)));
             return (!corseusatenonbloccate.Contains(corsa)); 
-        }
+        }*/
         public int CorsaAttuale()
         { return corsaattuale; }
         public bool SeImmediata(int corsa)
@@ -875,12 +1026,14 @@ namespace RunPass
         { return (SeTutteMarciate() && SeCorsaMarciabile(corsa) && !SeCorsaUsata(corsa)) && !SePrimaCorsa(corsa); }
         public int NextMarcia()
         {
-            if (corseattuali.Count() == 0)
+            /*if (corseattuali.Count() == 0)
                 return 0;
             var prossimecorsedamarciare = new HashSet<int>(corseattuali.Keys).Where(c => c > UltimaCorsaMarciataGlobale());
             if (!prossimecorsedamarciare.Any())
                 return 0;
-            return prossimecorsedamarciare.Min();
+            return prossimecorsedamarciare.Min();*/
+            //return corsaManager.CalcolaMarciaSuccessiva(corsemarciate.ToList(), corseattuali.Keys.ToList());
+            return corsaManager.EseguiTPNM(corsemarciate.ToArray(), corseattuali.Keys.ToArray());
         }
         public List<(string Tipo, string Testo)> Intestazione()
         {
@@ -972,6 +1125,10 @@ namespace RunPass
         }
         public void SetNextCorsa()
         {
+            //var corsaManager = new CorseManager();
+            //corsaattuale = corsaManager.CalcolaCorsaSuccessiva(corsainiziale, corsalimite, corsaattuale, corsemarciate.ToList(), corseattuali.Keys.ToList());
+            corsaattuale = corsaManager.EseguiCCS(corsainiziale,corsalimite,corsaattuale,corsemarciate.ToArray(),corseattuali.Keys.ToArray());
+            /*
             HashSet<int> corseusateIterabili = new HashSet<int>(new HashSet<int>(corseattuali.Keys));
             corseusateIterabili.RemoveWhere(c => !SeCorsaIterabile(c));  //Dalle corse usate toglie quelle non iterabili
             corseusateIterabili.RemoveWhere(c => SeCorsaBloccata(c));  //poi toglie quelle bloccate, rimangono l'ultima narciate e quelle non marciate
@@ -988,8 +1145,8 @@ namespace RunPass
             else  // Altrimenti prende in considerazione la successiva corsa usata
             {
                 corsaattuale = listaCorse[indcorsacorr + 1];
-            }
-            
+            }*/
+
             OnAggiornaDatiComanda();
         }
         public void AddMarciata(int corsa)
@@ -1344,6 +1501,8 @@ namespace RunPass
         public bool Ce { get; set; } = false;
         public bool Ee { get; set; } = false;
         public bool Me { get; set; } = false;
+        public int MeseScadenza { get; set; }
+        public int AnnoScadenza { get; set; }
         public int TipoDB { get; set; } = 0;
         public int ActualRvc { get; set; } = 0;
         public string ConnStringMySq { get; } = "Server=127.0.0.1;Database=datastore;";
@@ -1354,6 +1513,7 @@ namespace RunPass
 
     public class Application : OpsExtensibilityApplication
     {
+        private RunPassLogic rpl;
         private Ambiente ambiente = new Ambiente();
         private string LeggiLaMiaVariabile(string chiaveDaCercare)
         {
@@ -1398,10 +1558,13 @@ namespace RunPass
             //this.OpsSelectedItemCompleteQueryEvent += SelectedItemCompleteQuery;
             this.OpsCustomOrderDeviceEventArgs += GestOpsCustomOrderDeviceEventArgs;
             //this.OpsPrinterDataEvent += GestPrinterDataEvent;
-            //this.OpsFinalTenderEvent += GestFinalTenderEvent;
             this.OpsInitEvent += GestInitEvent;
             this.OpsMiVoidPreviewEvent += GestVoidItem;
-            
+            //Escita Conto
+            //this.OpsFinalTenderEvent += GestFinalTender;
+            //this.OpsCancelOrderEvent += GestCancelOrder;
+            //this.OpsTransactionCancelEvent += GestTransactionCancel;
+            //this.OpsSvcTotalEvent += GestSvcTotal;
         }
 
         private bool VerExtension()
@@ -1472,8 +1635,6 @@ namespace RunPass
         {
             myLog.Info("Estensione RunPass avviata con successo.");
 
-            //var dataStore = this.DataStore;
-
             if (_config is null)
             {
                 string json = DataStore.ReadExtensionApplicationContentTextByNameKey(OpsContext.RvcID, ApplicationName, "Config");
@@ -1483,33 +1644,26 @@ namespace RunPass
 
             _codificaStampante = Encoding.GetEncoding(_config.CodificaStampante);
 
-            //long codreq = TestWork.LeggiInt(_config.RTT_ID.ToString());
-            var codreq = FloorZero.LeggiDati(_config.RTT_ID.ToString());
-            _config.AnnoScadenza = codreq.Anno;
-            _config.MeseScadenza = codreq.Mese;
-
-            bool codeValid = (OpsContext.PropHierStrucID.ToString() == (codreq.ClienteId.ToString().Substring(0, OpsContext.PropHierStrucID.ToString().Length)));
-            bool codeExpired =(_config.AnnoScadenza < DateTime.Now.Year % 100 || _config.MeseScadenza < DateTime.Now.Month % 100);
-            if (!codeValid || codeExpired)
-            {
-                OpsContext.ShowMessage(messageSow("Codice non valido o scaduto, extension disabilitata"));
-                myLog.Warn("Codice non valido o scaduto, extension disabilitata");
-                ambiente.Me = false; // menu_enable = false;
-                ambiente.Ce = false;// _coursemng_enable = false;
-                ambiente.Ee = false;// _extensionEnbled = false;
-            }
-            else
-                ambiente.Ee = true;// _extensionEnbled = true;
-
-            //_actual_Rvc = OpsContext.RvcID;
-
-            if (_config.VerbosityDisplay > 0)
-            {
-                OpsContext.ShowMessage(messageSow("OpsInitEvent"));
-                OpsContext.ShowMessage(messageSow(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString())));
-            }
+            
             myLog.Debug("OpsInitEvent");
             myLog.Debug(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString()));
+
+            rpl = new RunPassLogic(_config.RTT_ID.ToString(), OpsContext.PropHierStrucID);
+            ambiente.MeseScadenza = rpl.MeseScadenza();
+            ambiente.AnnoScadenza = rpl.AnnoScadenza();
+            ambiente.Ee = true;
+            if (ambiente.MeseScadenza == -1 || ambiente.AnnoScadenza == -1)
+            {
+                ambiente.Ee = false;
+                OpsContext.ShowMessage("Run Pass Disabilitata. Codice licenza non valido");
+                myLog.Error("Run Pass Disabilitata. Codice licenza non valido");
+            }
+            else if (IsTodayAfterMonthAndYear(ambiente.AnnoScadenza,ambiente.MeseScadenza))
+            {
+                ambiente.Ee = false;
+                OpsContext.ShowMessage("Run Pass Disabilitata. Licenza scaduta");
+                myLog.Error("Run Pass Disabilitata. Licenza scaduta");
+            }
 
 #pragma warning disable 0618
             var dataStoreold = OpsContext.DataStore;
@@ -1563,12 +1717,38 @@ namespace RunPass
             return EventProcessingInstruction.Continue;
         }
 
-        private EventProcessingInstruction GestFinalTenderEvent(object sender, OpsTmedEventArgs args)
+        private EventProcessingInstruction GestCancelOrder(object sender, OpsCancelOrderEventArgs args)
         {
-            if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("OpsFinalTenderEvent"));
+            OpsContext.ShowMessage(messageSow("OpsCancelOrderEvent"));
+            rpl.Dispose();
+            myLog.Debug("OpsCancelOrderEvent");
+            return EventProcessingInstruction.Continue;
+        }
+
+        private EventProcessingInstruction GestFinalTender(object sender, OpsTmedEventArgs args)
+        {
+            OpsContext.ShowMessage(messageSow("OpsFinalTenderEvent"));
+            rpl.Dispose();
             myLog.Debug("OpsFinalTenderEvent");
             return EventProcessingInstruction.Continue;
         }
+
+        private EventProcessingInstruction GestTransactionCancel(object sender, OpsTransactionCancelPreviewEventArgs args)
+        {
+            OpsContext.ShowMessage(messageSow("OpsTransactionCancelEvent"));
+            rpl.Dispose();
+            myLog.Debug("OpsTransactionCancelEvent");
+            return EventProcessingInstruction.Continue;
+        }
+
+        private EventProcessingInstruction GestSvcTotal(object sender, OpsTmedEventArgs args)
+        {
+            OpsContext.ShowMessage(messageSow("OpsSvcTotalEvent"));
+            rpl.Dispose();
+            myLog.Debug("OpsSvcTotalEvent");
+            return EventProcessingInstruction.Continue;
+        }
+
 
         private EventProcessingInstruction GestPrinterDataEvent(object sender, OpsPrinterDataArgs args)
         {
@@ -1771,6 +1951,22 @@ namespace RunPass
         private string messageSow(string origMessage)
         {
             return $"RunPass:\r\n{origMessage}";
+        }
+
+        public static bool IsTodayAfterMonthAndYear(int pyear, int month)
+        {
+            var today = DateTime.Today;
+            int year = 2000 + pyear;
+
+            // Se l'anno corrente è maggiore, siamo sicuramente successivi
+            if (today.Year > year)
+                return true;
+
+            // Se l'anno è lo stesso, verifichiamo se il mese corrente è successivo
+            if (today.Year == year && today.Month > month)
+                return true;
+
+            return false;
         }
 
         private EventProcessingInstruction GestOpsCustomOrderDeviceEventArgs(object sender, OpsCustomOrderDeviceEventArgs args)
@@ -2539,15 +2735,17 @@ namespace RunPass
 
         private void VerificaExtension(bool NewCheck = true)
         {
-            _gestioneCorse = new GestioneCorse(_config.CorsaIniziale, _config.CorsaLimite, _config.AltreCorse);  //Inizializza la classe GestioneCorse con la corsa iniziale, la corsa limite e il flag per l'apertura conto (per indicare se è già stata stampata)
+            _gestioneCorse = new GestioneCorse(_config.CorsaIniziale, _config.CorsaLimite, _config.AltreCorse, rpl);  //Inizializza la classe GestioneCorse con la corsa iniziale, la corsa limite e il flag per l'apertura conto (per indicare se è già stata stampata)
             _gestioneCorse.AggiornaDatiComanda += GestAggiornaCorsa;
             _gestioneCorse.AggiungMarciato += GestEseguiMarcia;
+
             if (ambiente.Ce) //_coursemng_enable)
             {
                 if (!NewCheck)
                 {
                     PreparaGestioneCorse();
                     _gestioneCorse.AggiornaCorse(OpsContext.CheckDetail);
+
                 }
                 AggiornaTitoli();
             }
@@ -3122,7 +3320,7 @@ namespace RunPass
 
             if (!VerExtension()) return ;
             
-            OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nScadenza {_config.MeseScadenza}/{_config.AnnoScadenza}\nGestione Corse abilitata {ambiente.Ce}\nGestione Menu abilitata {ambiente.Me}"));
+            OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nScadenza {ambiente.MeseScadenza}/{ambiente.AnnoScadenza}\nGestione Corse abilitata {ambiente.Ce}\nGestione Menu abilitata {ambiente.Me}"));
         }
 
         public class ApplicationFactory : IExtensibilityAssemblyFactory

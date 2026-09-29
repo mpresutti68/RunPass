@@ -21,7 +21,7 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>..\Exe\RunPass\</OutputPath>
+    <OutputPath>obj\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -29,7 +29,7 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
-    <OutputPath>..\Exe\RunPass\</OutputPath>
+    <OutputPath>.\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -176,6 +176,7 @@
     <Error Condition="!Exists('packages\Obfuscar.2.2.50\build\obfuscar.props')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Obfuscar.2.2.50\build\obfuscar.props'))" />
   </Target>
   <PropertyGroup>
-    <PostBuildEvent>"$(Obfuscar)" obfuscar.xml"</PostBuildEvent>
+    <PostBuildEvent>xcopy /y "RunPass.dll" "C:\Progetti\Exe\RunPass\"
+</PostBuildEvent>
   </PropertyGroup>
 </Project>

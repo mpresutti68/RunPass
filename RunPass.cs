@@ -35,10 +35,11 @@ using Micros.PosCore.Extensibility.Ops;
 using Micros.PosCore.Extensibility.Printing;
 using Micros.PosCore.Printing;
 using Microsoft.PointOfService;
-using MySql.Data.MySqlClient;
+//using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
+using MySqlConnector;
 using static System.Net.Mime.MediaTypeNames;
-using static Mysqlx.Expect.Open.Types.Condition.Types;
+//using static Mysqlx.Expect.Open.Types.Condition.Types;
 using static RunPass.GestioneCorse;
 
 namespace RunPass
@@ -673,6 +674,7 @@ namespace RunPass
         public string CheckID { get; set; }
         public string Rvc_name { get; set; }
         public int MarciaCorrente { get; set; }
+        public int NumbGuest { get; set; }
     }
 
     public class NomiCorse
@@ -705,61 +707,6 @@ namespace RunPass
 
     public class GestioneCorse
     {
-        /*public class CorseManager
-        {
-            // Sostituisci "NomeDellaTuaLibreria.dll" con il nome reale della DLL generata dal C++
-            [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
-            private static extern int CCSI(
-                int corsaIniziale,
-                int corsaLimite,
-                int corsaAttuale,
-                int[] corseMarciateArr,
-                int corseMarciateSize,
-                int[] corseUsateArr,
-                int corseUsateSize);
-
-            [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
-            private static extern int TPNMI(
-                int[] corseMarciateArr,
-                int corseMarciateSize,
-                int[] corseUsateArr,
-                int corseUsateSize);
-
-            /// <summary>
-            /// Calcola la corsa successiva interfacciandosi con la libreria C++ unmanaged
-            /// </summary>
-            public int CalcolaCorsaSuccessiva(int corsaIniziale, int corsaLimite, int corsaAttuale, List<int> corseMarciate, List<int> corseUsate)
-            {
-                // Gestione di sicurezza nel caso arrivino liste nulle
-                int[] arrMarciate = corseMarciate != null ? corseMarciate.ToArray() : Array.Empty<int>();
-                int[] arrUsate = corseUsate != null ? corseUsate.ToArray() : Array.Empty<int>();
-
-                // Chiamata alla DLL
-                return CCSI(
-                    corsaIniziale,
-                    corsaLimite,
-                    corsaAttuale,
-                    arrMarciate,
-                    arrMarciate.Length,
-                    arrUsate,
-                    arrUsate.Length);
-            }
-
-            public int CalcolaMarciaSuccessiva(List<int> corseMarciate, List<int> corseUsate)
-            {
-                // Gestione di sicurezza nel caso arrivino liste nulle
-                int[] arrMarciate = corseMarciate != null ? corseMarciate.ToArray() : Array.Empty<int>();
-                int[] arrUsate = corseUsate != null ? corseUsate.ToArray() : Array.Empty<int>();
-
-                // Chiamata alla DLL
-                return TPNMI(
-                    arrMarciate,
-                    arrMarciate.Length,
-                    arrUsate,
-                    arrUsate.Length);
-            }
-        }
-        private CorseManager corsaManager = new CorseManager();*/
         private RunPassLogic corsaManager;
         public int corsainiziale { get; private set; }
         public int corsalimite { get; private set; }
@@ -815,23 +762,6 @@ namespace RunPass
         { 
             return (!corseattuali.Keys.Any(idCorsa => SeCorsaIterabile(idCorsa)) && !corsemarciate.Any());
         }
-        /*private int UltimaCorsaUsata()
-        {
-            if (corseattuali.Count == 0)
-                return 0;
-            HashSet<int> corseusate = new HashSet<int>(corseattuali.Keys);
-            var corseIterabili = corseusate.Where(c => SeCorsaIterabile (c));
-            if (!corseIterabili.Any())
-                return 0;
-            else
-                return corseIterabili.Max();
-        }*/
-        private bool SeTutteMarciate()
-        {
-            //HashSet<int> corseusate = new HashSet<int>(corseattuali.Keys);
-            HashSet<int> corseusate = corseattuali.Keys.Where(k => k != 0).ToHashSet();
-            return corseusate.IsSubsetOf(corsemarciate); 
-        }
         private void ImpostaCorsa(bool aggDatiComanda = true)
         {
             if (UltimaCorsaMarciata() > 0)
@@ -884,6 +814,11 @@ namespace RunPass
         }
 
         // PROPRIETÀ PUBBLICHE
+        public bool SeTutteMarciate()
+        {
+            HashSet<int> corseusate = corseattuali.Keys.Where(k => SeCorsaMarciabile(k)).ToHashSet();
+            return corseusate.IsSubsetOf(corsemarciate);
+        }
         public bool SeCorsaMarciabile(int corsa)  //Se appartiene alle base o alle altre corse
         { return TipoCorsa(corsa) == TipoCorsaEnum.Base || TipoCorsa(corsa) == TipoCorsaEnum.AltraCorsa; }
         public bool SeCorsaIterabile(int corsa)  //Se appartiene allecorse base
@@ -917,14 +852,11 @@ namespace RunPass
         { return (SeTutteMarciate() && SeCorsaMarciabile(corsa) && !SeCorsaUsata(corsa)) && !SePrimaCorsa(corsa); }
         public int NextMarcia()
         {
-            /*if (corseattuali.Count() == 0)
-                return 0;
-            var prossimecorsedamarciare = new HashSet<int>(corseattuali.Keys).Where(c => c > UltimaCorsaMarciataGlobale());
-            if (!prossimecorsedamarciare.Any())
-                return 0;
-            return prossimecorsedamarciare.Min();*/
-            //return corsaManager.CalcolaMarciaSuccessiva(corsemarciate.ToList(), corseattuali.Keys.ToList());
-            return corsaManager.EseguiTPNM(corsemarciate.ToArray(), corseattuali.Keys.ToArray());
+            int[] chiaviFiltrate = corseattuali
+            .Where(kvp => SeCorsaMarciabile(kvp.Key))
+            .Select(kvp => kvp.Key)
+            .ToArray();
+            return corsaManager.EseguiTPNM(corsemarciate.ToArray(), chiaviFiltrate);
         }
         public List<(string Tipo, string Testo)> Intestazione()
         {
@@ -976,7 +908,7 @@ namespace RunPass
                     datiCorsa.Articoli.Add(link);
                 }
             }
-            HashSet<int> corseusate = corseattuali.Keys.Where(k => k != 0).ToHashSet();
+            HashSet<int> corseusate = corseattuali.Keys.Where(k => SeCorsaMarciabile(k)).ToHashSet();
             if (corseusate.Count == 1 && SeCorsaMarciabile(corseusate.Single()) && !SeCorsaMarciata(corseusate.Single()))
             {
                 AddMarciata(corseusate.Single());
@@ -1007,9 +939,13 @@ namespace RunPass
                 OnAggiornaDatiComanda();
             }
         }
-        public void SetNextCorsa()
+        public void NextCorsa()
         {
-            corsaattuale = corsaManager.EseguiCCS(corsainiziale,corsalimite,corsaattuale,corsemarciate.ToArray(),corseattuali.Keys.ToArray());
+            int[] chiaviFiltrate = corseattuali
+            .Where(kvp => SeCorsaMarciabile(kvp.Key))
+            .Select(kvp => kvp.Key)
+            .ToArray();
+            corsaattuale = corsaManager.EseguiCCS(corsainiziale,corsalimite,corsaattuale,corsemarciate.ToArray(), chiaviFiltrate);
             OnAggiornaDatiComanda();
         }
         public void AddMarciata(int corsa)
@@ -1486,10 +1422,10 @@ namespace RunPass
                     _gestioneCorse.RemoveMarciata(corsaArticolo);
                 }
             }
-            else
-            {
-                _gestioneCorse.AggiornaCorse(OpsContext.CheckDetail, true);
-            }
+            //else
+            //{
+            _gestioneCorse.AggiornaCorse(OpsContext.CheckDetail, true);
+            //}
             AggiornaTitoli();
             return EventProcessingInstruction.Continue;
         }
@@ -1628,7 +1564,7 @@ namespace RunPass
             dati.Tavolo = OpsContext.CheckTableName;
             dati.Utente = OpsContext.TransEmployeeCheckName;
             dati.Rvc_name = OpsContext.RvcName;
-            //dati.MarciaCorrente = marciacorr;
+            dati.NumbGuest = OpsContext.Check.Covers;
             return dati;
         }
 
@@ -1722,7 +1658,7 @@ namespace RunPass
             dati.Utente = "Teststampa";
             dati.Rvc_name = "Ristorante Test";
             dati.MarciaCorrente = 1;
-
+            dati.NumbGuest = 2;
             return dati;
         }
 
@@ -2121,6 +2057,12 @@ namespace RunPass
                 riga = string.Format("{0}\r\n", datiComanda.CheckID);
                 intestazione.AddRange(_codificaStampante.GetBytes(riga));
             }
+
+            // Number Guest
+            intestazione.AddRange(EscPos.TextDoubleSize);
+            intestazione.AddRange(EscPos.TextBoldOff);
+            riga = string.Format("Num.Guest {0}\r\n", datiComanda.NumbGuest);
+            intestazione.AddRange(_codificaStampante.GetBytes(riga));
 
             // Riga -- testo doppio centrato --
             intestazione.AddRange(EscPos.TextDoubleSize);
@@ -2563,7 +2505,7 @@ namespace RunPass
             if (ambiente.Me && (_listaMenu is null || ambiente.ActualRvc != OpsContext.RvcID))
             {
                 var allContentData = DataStore.ReadAllContent(OpsContext.RvcID);
-                var elementoCercato = allContentData.FirstOrDefault(c => c.Name == "CorseMng_Menu");
+                var elementoCercato = allContentData.FirstOrDefault(c => c.Name == "RunPass_Menu");
 
                 if (elementoCercato != null)
                 {
@@ -2835,7 +2777,7 @@ namespace RunPass
             OpsCommand cmdPrezzo = new OpsCommand(OpsCommandType.AsciiData);
             OpsCommand cmdEnter = new OpsCommand(OpsCommandType.EnterKey);
             OpsCommand cmdStorno = new OpsCommand(OpsCommandType.Void);
-
+            //OpsCommand cmdNoPrint1 = new OpsCommand(OpsCommandType.overr)
             // Configurazione Comandi
             cmdArticolo.Number = IDarticolo;
             if (newPrice != null)
@@ -3006,13 +2948,17 @@ namespace RunPass
 
                             OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(indiceCorrente);
 
-                            if (device.TypeOD != "M")
+                            if (device.TypeOD != "M" && device.TypeOD != "N")
                             {
                                 payload = Comanda_MA_100_00(indiceCorrente, datiComanda, sottoLista);
                                 stampaComanda(payload.ToArray(), device);
                             }
                         }
                     }
+                    
+                }
+                else 
+                {
                     myLog.Debug("Test Mode, no stampa");
                     return;
                 }
@@ -3060,7 +3006,7 @@ namespace RunPass
 
             if (OpsContext.Check != null)
             {
-                _gestioneCorse.SetNextCorsa();
+                _gestioneCorse.NextCorsa();
 
             }
             else
@@ -3138,7 +3084,11 @@ namespace RunPass
         {
             if (!VerExtension()) return;
             if (!VerCourseMng()) return;
-
+            if (_gestioneCorse.SeTutteMarciate())
+            {
+                OpsContext.ShowMessage("Tuure le corse sono Marciate");
+                return;
+            }
             int? successiva = _gestioneCorse.NextMarcia();
 
             if (successiva != null && successiva.Value != 0)

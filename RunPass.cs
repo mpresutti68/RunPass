@@ -3,6 +3,8 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.ComponentModel.Composition;
 using System.Data;
 using System.Data.Common;
@@ -23,7 +25,12 @@ using System.Runtime.Remoting.Contexts;
 using System.Runtime.Remoting.Messaging;
 using System.Security.Policy;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Threading;
 using Google.Protobuf.WellKnownTypes;
 using Micros.DataStore;
 using Micros.Ops;
@@ -35,15 +42,183 @@ using Micros.PosCore.Extensibility.Ops;
 using Micros.PosCore.Extensibility.Printing;
 using Micros.PosCore.Printing;
 using Microsoft.PointOfService;
+using MySqlConnector;
 //using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
-using MySqlConnector;
 using static System.Net.Mime.MediaTypeNames;
 //using static Mysqlx.Expect.Open.Types.Condition.Types;
 using static RunPass.GestioneCorse;
 
 namespace RunPass
 {
+    public class CustomCheckView : UserControl
+    {
+        private StackPanel _contenitoreCorse;
+        private TextBlock _txtHeaderConto;
+        private readonly Application _app;
+
+        public CustomCheckView(Application app)
+        {
+            _app = app;
+            CostruisciInterfaccia();
+        }
+
+        private void CostruisciInterfaccia()
+        {
+            var mainBorder = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(245, 245, 245)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8)
+            };
+
+            var mainGrid = new Grid();
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            // Intestazione Conto
+            _txtHeaderConto = new TextBlock
+            {
+                FontSize = 16,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Black,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            Grid.SetRow(_txtHeaderConto, 0);
+            mainGrid.Children.Add(_txtHeaderConto);
+
+            // Area scorrevole per le corse
+            var scrollViewer = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                PanningMode = PanningMode.VerticalOnly
+            };
+
+            _contenitoreCorse = new StackPanel { Orientation = Orientation.Vertical };
+            scrollViewer.Content = _contenitoreCorse;
+
+            Grid.SetRow(scrollViewer, 1);
+            mainGrid.Children.Add(scrollViewer);
+
+            mainBorder.Child = mainGrid;
+            this.Content = mainBorder;
+        }
+
+        public void AggiornaVista(string infoTavolo, List<GruppoCorsaViewModel> gruppi)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => AggiornaVista(infoTavolo, gruppi));
+                return;
+            }
+
+            _txtHeaderConto.Text = infoTavolo;
+            _contenitoreCorse.Children.Clear();
+
+            var brushConverter = new BrushConverter();
+
+            foreach (var gruppo in gruppi)
+            {
+                // Header della Corsa
+                var headerBorder = new Border
+                {
+                    Background = (Brush)brushConverter.ConvertFromString(gruppo.ColoreStato),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(8, 4, 8, 4),
+                    Margin = new Thickness(0, 6, 0, 2)
+                };
+
+                var headerGrid = new Grid();
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var lblNomeCorsa = new TextBlock
+                {
+                    Text = gruppo.NomeCorsa.ToUpper(),
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 14
+                };
+
+                var lblStato = new TextBlock
+                {
+                    Text = gruppo.StatoCorsa,
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12
+                };
+                Grid.SetColumn(lblStato, 1);
+
+                headerGrid.Children.Add(lblNomeCorsa);
+                headerGrid.Children.Add(lblStato);
+                headerBorder.Child = headerGrid;
+
+                _contenitoreCorse.Children.Add(headerBorder);
+
+                // Righe Articoli della Corsa
+                foreach (var art in gruppo.Articoli)
+                {
+                    var rigaGrid = new Grid { Margin = new Thickness(4, 2, 4, 2) };
+                    rigaGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(35) }); // Qta
+                    rigaGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Nome
+                    rigaGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(65) }); // Prezzo
+
+                    var stileTesto = art.SeInviato ? FontStyles.Italic : FontStyles.Normal;
+                    var coloreTesto = art.SeInviato ? Brushes.DimGray : Brushes.Black;
+
+                    var txtQta = new TextBlock { Text = art.Quantita, FontWeight = FontWeights.Bold, Foreground = coloreTesto };
+                    var txtNome = new TextBlock { Text = art.Nome, FontStyle = stileTesto, Foreground = coloreTesto };
+                    var txtPrezzo = new TextBlock { Text = art.Prezzo, HorizontalAlignment = HorizontalAlignment.Right, Foreground = coloreTesto };
+
+                    Grid.SetColumn(txtQta, 0);
+                    Grid.SetColumn(txtNome, 1);
+                    Grid.SetColumn(txtPrezzo, 2);
+
+                    rigaGrid.Children.Add(txtQta);
+                    rigaGrid.Children.Add(txtNome);
+                    rigaGrid.Children.Add(txtPrezzo);
+
+                    _contenitoreCorse.Children.Add(rigaGrid);
+
+                    // Eventuali note/condimenti
+                    foreach (var cond in art.Condimenti)
+                    {
+                        var txtCond = new TextBlock
+                        {
+                            Text = $"   {cond}",
+                            FontSize = 12,
+                            Foreground = Brushes.DarkSlateGray,
+                            Margin = new Thickness(35, 0, 0, 2)
+                        };
+                        _contenitoreCorse.Children.Add(txtCond);
+                    }
+                }
+            }
+        }
+    }
+
+    public class RigaContoViewModel
+    {
+        public int DetailLink { get; set; }
+        public string Quantita { get; set; }
+        public string Nome { get; set; }
+        public string Prezzo { get; set; }
+        public int Seat { get; set; }
+        public bool SeInviato { get; set; }
+        public List<string> Condimenti { get; set; } = new List<string>();
+    }
+
+    public class GruppoCorsaViewModel
+    {
+        public int NumeroCorsa { get; set; }
+        public string NomeCorsa { get; set; }
+        public string StatoCorsa { get; set; } // Es. "MARCIATA", "A SEGUIRE", "IMMEDIATA"
+        public string ColoreStato { get; set; } // Es. "#2E7D32" (Verde), "#EF6C00" (Arancio)
+        public List<RigaContoViewModel> Articoli { get; set; } = new List<RigaContoViewModel>();
+    }
+
     public class RunPassLogic : IDisposable
     {
         private IntPtr _nativeInstance;
@@ -1312,6 +1487,154 @@ namespace RunPass
 
     public class Application : OpsExtensibilityApplication
     {
+        private CustomCheckView _vistaInPagina;
+        private Window _pannelloContoFisso;
+        private CustomCheckView _vistaConto;
+        private void MostraPannelloContoInPagina()
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    var mainWin = System.Windows.Application.Current.MainWindow;
+                    if (mainWin == null) return;
+
+                    if (_pannelloContoFisso == null)
+                    {
+                        _vistaConto = new CustomCheckView(this);
+                        _pannelloContoFisso = new Window
+                        {
+                            Owner = mainWin,
+                            WindowStyle = WindowStyle.None,
+                            ResizeMode = ResizeMode.NoResize,
+                            ShowInTaskbar = false,
+                            Topmost = false,
+                            // Regola qui le coordinate X, Y, Larghezza e Altezza in base al tuo schermo POS
+                            Left = mainWin.Left + 15,
+                            Top = mainWin.Top + 90,
+                            Width = 360,
+                            Height = 520,
+                            Content = _vistaConto
+                        };
+                    }
+
+                    string info = OpsContext.Check != null
+                        ? $"Tav. {OpsContext.CheckTableName} - Conto #{OpsContext.CheckNumber}"
+                        : "Riepilogo Conto";
+
+                    _vistaConto.AggiornaVista(info, OttieniDatiContoCustom());
+
+                    if (!_pannelloContoFisso.IsVisible)
+                    {
+                        _pannelloContoFisso.Show(); // Show() non è modale: i tasti del POS restano cliccabili!
+                    }
+                }
+                catch (Exception ex)
+                {
+                    myLog.Error("Errore apertura pannello conto custom", ex);
+                }
+            }));
+        }
+
+        private void NascondiPannelloContoInPagina()
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_pannelloContoFisso != null && _pannelloContoFisso.IsVisible)
+                {
+                    _pannelloContoFisso.Hide();
+                }
+            }));
+        }
+        public List<GruppoCorsaViewModel> OttieniDatiContoCustom()
+        {
+            var gruppi = new Dictionary<int, GruppoCorsaViewModel>();
+            if (OpsContext.Check == null || OpsContext.CheckDetail == null)
+                return new List<GruppoCorsaViewModel>();
+
+            // Filtriamo solo i MenuItemDetail con quantità positiva
+            var tuttiGliArticoli = OpsContext.CheckDetail
+                .OfType<MenuItemDetail>()
+                .Where(m => m.SalesCount > 0)
+                .ToList();
+
+            // Costruiamo un HashSet con tutti i DetailLink che compaiono nella lista .Condiments
+            // così escludiamo i condimenti dal ciclo principale dei piatti
+            var linkCondimenti = new HashSet<int>(
+                tuttiGliArticoli
+                    .Where(m => m.Condiments != null)
+                    .SelectMany(m => m.Condiments)
+                    .Select(c => c.DetailLink)
+            );
+
+            foreach (MenuItemDetail menuItem in tuttiGliArticoli)
+            {
+                // 1. Saltiamo se è un condimento (verrà mostrato sotto il suo piatto principale)
+                if (linkCondimenti.Contains(menuItem.DetailLink))
+                    continue;
+
+                // 2. Saltiamo l'articolo fittizio "Marciato"
+                if (_config.SeOrdineMarcia(menuItem.MiObjNum))
+                    continue;
+
+                int numCorsa = menuItem.KdsCourseNum;
+
+                if (!gruppi.TryGetValue(numCorsa, out var gruppo))
+                {
+                    bool marciata = _gestioneCorse != null && _gestioneCorse.SeCorsaMarciata(numCorsa);
+                    bool immediata = _gestioneCorse != null && _gestioneCorse.SeImmediata(numCorsa);
+
+                    string labelCorsa = numCorsa == 0 ? "Nessuna Corsa" :
+                                        (_config.AltreCorse.ContainsKey(numCorsa) ? _config.AltreCorse[numCorsa] : $"Corsa {numCorsa}");
+
+                    gruppo = new GruppoCorsaViewModel
+                    {
+                        NumeroCorsa = numCorsa,
+                        NomeCorsa = labelCorsa,
+                        StatoCorsa = marciata ? "MARCIATA" : (immediata ? "IMMEDIATA" : "A SEGUIRE"),
+                        ColoreStato = marciata ? "#2E7D32" : (immediata ? "#1565C0" : "#EF6C00")
+                    };
+                    gruppi[numCorsa] = gruppo;
+                }
+
+                var rigaVm = new RigaContoViewModel
+                {
+                    DetailLink = menuItem.DetailLink,
+                    Quantita = menuItem.SalesCount.ToString(),
+                    Nome = menuItem.Name.ToString(),
+                    Prezzo = menuItem.Total.ToString("0.00"),
+                    Seat = menuItem.Seat,
+                    SeInviato = menuItem.DetailPostingTime.Year > 1
+                };
+
+                // Aggiunta Reference Entries dell'articolo principale
+                if (menuItem.ReferenceEntries != null && menuItem.ReferenceEntries.Count > 0)
+                {
+                    rigaVm.Condimenti.Add($"Note: {menuItem.ReferenceEntries[0].Descriptor}");
+                }
+
+                // Aggiunta dei Condimenti figli direttamente dalla proprietà .Condiments
+                if (menuItem.Condiments != null)
+                {
+                    foreach (var cond in menuItem.Condiments)
+                    {
+                        if (cond.SalesCount <= 0) continue;
+
+                        string qtaCond = cond.SalesCount > 1 ? $"{cond.SalesCount}x " : "";
+                        string refCond = (cond.ReferenceEntries != null && cond.ReferenceEntries.Count > 0)
+                                         ? $" ({cond.ReferenceEntries[0].Descriptor})"
+                                         : "";
+
+                        rigaVm.Condimenti.Add($"+ {qtaCond}{cond.Name}{refCond}");
+                    }
+                }
+
+                gruppo.Articoli.Add(rigaVm);
+            }
+
+            return gruppi.Values.OrderBy(g => g.NumeroCorsa).ToList();
+        }
+
         private RunPassLogic rpl;
         private Ambiente ambiente = new Ambiente();
         private string LeggiLaMiaVariabile(string chiaveDaCercare)
@@ -1359,6 +1682,10 @@ namespace RunPass
             //this.OpsPrinterDataEvent += GestPrinterDataEvent;
             this.OpsInitEvent += GestInitEvent;
             this.OpsMiVoidPreviewEvent += GestVoidItem;
+            this.OpsFinalTenderEvent += (s, e) => { NascondiPannelloContoInPagina(); return EventProcessingInstruction.Continue; };
+            this.OpsCancelOrderEvent += (s, e) => { NascondiPannelloContoInPagina(); return EventProcessingInstruction.Continue; };
+            this.OpsTransactionCancelEvent += (s, e) => { NascondiPannelloContoInPagina(); return EventProcessingInstruction.Continue; };
+            this.OpsSvcTotalEvent += (s, e) => { NascondiPannelloContoInPagina(); return EventProcessingInstruction.Continue; };
             //Escita Conto
             //this.OpsFinalTenderEvent += GestFinalTender;
             //this.OpsCancelOrderEvent += GestCancelOrder;
@@ -2866,6 +3193,14 @@ namespace RunPass
                 OpsContext.Check.AddExtensibilityData(infoAseguire);
             }
             OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.Refresh));
+
+            if (_vistaInPagina != null)
+            {
+                string info = $"Tav. {OpsContext.CheckTableName} | Corsa Attuale: {_gestioneCorse.CorsaAttuale()}";
+                _vistaInPagina.AggiornaVista(info, OttieniDatiContoCustom());
+            }
+
+            MostraPannelloContoInPagina();
         }
         
         private string NomeAltraCorsa(int numeroCorsa)

@@ -1,5 +1,4 @@
-﻿//using Google.Protobuf.WellKnownTypes;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -35,12 +34,9 @@ using Micros.PosCore.Extensibility.Ops;
 using Micros.PosCore.Extensibility.Printing;
 using Micros.PosCore.Printing;
 using Microsoft.PointOfService;
-//using MySql.Data.MySqlClient;
 using Newtonsoft.Json;
-using MySqlConnector;
 using static System.Net.Mime.MediaTypeNames;
-//using static Mysqlx.Expect.Open.Types.Condition.Types;
-using static RunPass.GestioneCorse;
+
 
 namespace RunPass
 {
@@ -53,9 +49,6 @@ namespace RunPass
 
         [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern void DestroyRunPassLogic(IntPtr instance);
-
-        //[DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
-        //private static extern bool LM_IsValida(IntPtr instance);
 
         [DllImport("RunPassLogic.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern int LM_GetMese(IntPtr instance);
@@ -80,10 +73,6 @@ namespace RunPass
         public RunPassLogic(string codiceLicenza, long idverifica)
         {
             _nativeInstance = CreateRunPassLogic(codiceLicenza, idverifica);
-            /*if (_nativeInstance == IntPtr.Zero || !LM_IsValida(_nativeInstance))
-            {
-                throw new UnauthorizedAccessException("Licenza non valida o codice errato.");
-            }*/
         }
 
         public int EseguiCCS(int ci, int cl, int ca, int[] cm, int[] cu)
@@ -102,7 +91,7 @@ namespace RunPass
 
         public int AnnoScadenza()
         {
-           return LM_GetAnno(_nativeInstance);
+            return LM_GetAnno(_nativeInstance);
         }
 
         public void Dispose()
@@ -112,49 +101,6 @@ namespace RunPass
                 DestroyRunPassLogic(_nativeInstance);
                 _nativeInstance = IntPtr.Zero;
             }
-        }
-    }
-
-    public interface IDbConnectionFactory
-    {
-        int TipoDB { get; }
-        DbConnection CreateConnection();
-    }
-
-    public class DbConnectionFactory : IDbConnectionFactory
-    {
-        public int TipoDB { get; }
-        private readonly string _connectionString;
-
-        public DbConnectionFactory(int tipoDB, string connectionString)
-        {
-            TipoDB = tipoDB;
-            _connectionString = connectionString;
-        }
-
-        public DbConnection CreateConnection()
-        {
-            DbConnection connection;
-
-            if (TipoDB == 0)
-            {
-                connection = new SqlConnection(_connectionString);
-            }
-            else if (TipoDB == 2)
-            {
-                connection = new MySqlConnection(_connectionString);
-            }
-            else
-            {
-                throw new NotSupportedException($"Tipo di database {TipoDB} non supportato.");
-            }
-
-            if (connection.State != ConnectionState.Open)
-            {
-                connection.Open();
-            }
-
-            return connection;
         }
     }
 
@@ -267,10 +213,7 @@ namespace RunPass
         public int CorsaIniziale { get; set; } = 1;
         public int CorsaLimite { get; set; } = 5;
         public long OverPrintClass { get; set; }
-
-        // Sostituisce le classi "CoppiaValori" rendendo la gestione dinamica
         public Dictionary<int, string> AltreCorse { get; set; } = new Dictionary<int, string>();
-
         public string Lbl_Marcia { get; set; }
         public int LunghNomeArticoli { get; set; } = 19;
         public int Riga_Intestazione_1 { get; set; } = 1;
@@ -282,319 +225,62 @@ namespace RunPass
             return objnum == Marciato;
         }
     }
-
+    
     public class OrderDeviceCache : IEnumerable<OrderDeviceCache.OrderDeviceInfo>
     {
-        //private readonly string _connectionString;
         private readonly Dictionary<string, OrderDeviceInfo> _items;
-        private readonly IDbConnectionFactory _dbFactory;
-        private readonly string _queryMySql = @"
-        WITH Printer as (
-            SELECT prn.PrinterID, prn.ConfigurationString, concat(ObjectNumber, ' ', nam.StringText) NomePrinter
-            FROM datastore.printer prn
-            INNER JOIN datastore.string_table nam on prn.NameID = nam.StringNumberID
-            WHERE ConnectionString = 'Micros.Devices.RollPrinter.Ethernet'
-        ),
-            OrderDevice as (
-                SELECT  OrdDvcIndex
-                FROM DataStore.WORKSTATION_ORDER_DEVICE
-                where IsVisible = 1 and IsDeleted =0
-                        and WorkstationID=@WksID
-        )
-        SELECT  odv.OrdDvcIndex,
-		        nam.StringText NomeOrderDevice,
-                odv.OptionBits,
-                odv.PmcOptionBits,
-                odv.VduOptionBits,
-                prn.PrinterID PrimaryID,
-                SUBSTRING_INDEX(prn.ConfigurationString, ',', 1) IP_Printer,
-                SUBSTRING_INDEX(SUBSTRING_INDEX(prn.ConfigurationString, ',', 2), ',', -1) Porta_Printer,
-                prn.NomePrinter PrinterName,
-                bak.PrinterID SecondaryBackupID,
-                SUBSTRING_INDEX(bak.ConfigurationString, ',', 1) IP_Backup,
-                SUBSTRING_INDEX(SUBSTRING_INDEX(bak.ConfigurationString, ',', 2), ',', -1) Porta_Backup,
-                bak.NomePrinter BackupName,
-                hiu.RevCtrID,
-                CASE 
-                        WHEN LEFT(odv.CustomName,2) = 'MA' THEN 'M'
-                        WHEN LEFT(odv.CustomName,2) = 'OD' THEN 'O'
-                        ELSE 'N'
-                END AS TypeOD
-        FROM datastore.order_device odv
-        LEFT OUTER JOIN Printer prn on odv.PrimaryID = prn.PrinterID
-        LEFT OUTER JOIN Printer bak on odv.SecondaryBackupID = bak.PrinterID
-        INNER JOIN datastore.hierarchy_structure his on odv.HierStrucID = his.HierStrucID
-        INNER JOIN datastore.hierarchy_unit hiu on his.HierUnitID = hiu.HierUnitID
-        INNER JOIN datastore.string_table nam on odv.HeaderID=nam.StringNumberID
-        INNER JOIN OrderDevice odact on odv.OrdDvcIndex = odact.OrdDvcIndex
-        WHERE hiu.RevCtrID = @RevCtrID;";
 
-        private readonly string _querySqlServer = @"
-            WITH PrinterCTE as (
-                SELECT prn.PrinterID, prn.ConfigurationString, CONCAT(ObjectNumber, ' ', nam.StringText) NomePrinter
-                FROM datastore.dbo.printer prn
-                INNER JOIN datastore.dbo.string_table nam on prn.NameID = nam.StringNumberID
-                WHERE ConnectionString = 'Micros.Devices.RollPrinter.Ethernet'
-            ),
-                OrderDevice as (
-                SELECT  [OrdDvcIndex]
-                FROM [DataStore].[dbo].[WORKSTATION_ORDER_DEVICE]
-                where IsVisible = 1 and IsDeleted =0
-                        and WorkstationID=@WksID --65848
-            )
-            SELECT  odv.OrdDvcIndex,
-		            nam.StringText NomeOrderDevice,
-                    odv.OptionBits,
-                    odv.PmcOptionBits,
-                    odv.VduOptionBits,
-                    prn.PrinterID PrimaryID,
-                    -- T-SQL: Estrazione IP (Tutto ciò che c'è prima della prima virgola)
-                    CASE WHEN CHARINDEX(',', prn.ConfigurationString) > 0 
-                         THEN LEFT(prn.ConfigurationString, CHARINDEX(',', prn.ConfigurationString) - 1) 
-                         ELSE prn.ConfigurationString END AS IP_Printer,
-                   CASE WHEN CHARINDEX(',', prn.ConfigurationString) > 0 
-
-                         THEN SUBSTRING(prn.ConfigurationString, CHARINDEX(',', prn.ConfigurationString) + 1, LEN(prn.ConfigurationString)) 
-
-                         ELSE '' END AS Porta_Printer,
-                    prn.NomePrinter PrinterName,
-                    bak.PrinterID SecondaryBackupID,
-                    -- T-SQL: Estrazione IP Backup
-                    CASE WHEN CHARINDEX(',', bak.ConfigurationString) > 0 
-                         THEN LEFT(bak.ConfigurationString, CHARINDEX(',', bak.ConfigurationString) - 1) 
-                         ELSE bak.ConfigurationString END AS IP_Backup,
-                    -- T-SQL: Estrazione Porta Backup
-                    CASE WHEN CHARINDEX(',', bak.ConfigurationString) > 0 
-                         THEN SUBSTRING(bak.ConfigurationString, CHARINDEX(',', bak.ConfigurationString) + 1, LEN(bak.ConfigurationString)) 
-                         ELSE '' END AS Porta_Backup,
-                    bak.NomePrinter BackupName,
-                    hiu.RevCtrID,
-                    CASE 
-                        WHEN LEFT(odv.CustomName,2) = 'MA' THEN 'M'
-                        WHEN LEFT(odv.CustomName,2) = 'OD' THEN 'O'
-                        ELSE 'N'
-                    END AS TypeOD
-            FROM datastore.dbo.order_device odv
-            LEFT OUTER JOIN PrinterCTE prn on odv.PrimaryID = prn.PrinterID
-            LEFT OUTER JOIN PrinterCTE bak on odv.SecondaryBackupID = bak.PrinterID
-            INNER JOIN datastore.dbo.hierarchy_structure his on odv.HierStrucID = his.HierStrucID
-            INNER JOIN datastore.dbo.hierarchy_unit hiu on his.HierUnitID = hiu.HierUnitID
-            INNER JOIN datastore.dbo.string_table nam on odv.HeaderID=nam.StringNumberID
-            INNER JOIN OrderDevice odact on odv.OrdDvcIndex = odact.OrdDvcIndex
-            WHERE hiu.RevCtrID = @RevCtrID; --12847";
-
-        /*public OrderDeviceCache(string connectionString)
+        public OrderDeviceCache()
         {
-            _connectionString = connectionString;
-            _items = new Dictionary<string, OrderDeviceInfo>();
-        }
-        */
-
-        public OrderDeviceCache(IDbConnectionFactory dbFactory)
-        {
-            _dbFactory = dbFactory;
             _items = new Dictionary<string, OrderDeviceInfo>();
         }
 
-        /*
-        public void Load(int typeDb, int revCtrlId, int wksID)
-        {
-            if (typeDb == 0)
-                LoadSqlServer(revCtrlId, wksID);
-            else
-                LoadMySql(revCtrlId,wksID);
-        }
-        private void LoadMySql(int revCtrId, int wksID)
+
+        public void Load(IList<Micros.PosCore.Extensibility.DataStore.DbRecords.DbPrinter> printers, Micros.PosCore.Extensibility.DataStore.DbRecords.DbOrderDevices devices, HashSet<int> odattive)
         {
             _items.Clear();
 
-            using (MySqlConnection conn = new MySqlConnection(_connectionString))
+            foreach (var device in devices)
             {
-                conn.Open();
+                if (device.Value.RedirectOrderDeviceID == 0) continue;
+                if (string.IsNullOrWhiteSpace(device.Value.CustomName)) continue;
+                if (device.Value.PrimaryID == 0 && device.Value.SecondaryBackupID == 0) continue;
+                if (!odattive.Contains(device.Value.OrdDvcIndex)) continue;
 
-                using (MySqlCommand cmd = new MySqlCommand(_sql, conn))
+
+
+                OrderDeviceInfo item = new OrderDeviceInfo
                 {
-                    cmd.Parameters.AddWithValue("@RevCtrID", revCtrId);
-                    cmd.Parameters.AddWithValue("@WksID", wksID);
+                    OrdDvcIndex = device.Value.OrdDvcIndex.ToString(),
+                    NomeOrderDevice = device.Value.Header.ToString(),
+                    OptionBits = device.Value.OptionBits.ToString(),
+                    BackupID = (int)device.Value.SecondaryBackupID,
+                    PrimaryID = (int)device.Value.PrimaryID,
+                    TypeOD = device.Value.CustomName.StartsWith("MA") ? "M" : device.Value.CustomName.StartsWith("OD") ? "O" : "N"
+                };
 
-                    using (MySqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        int ordDvcIndexCol = reader.GetOrdinal("OrdDvcIndex");
-
-                        while (reader.Read())
-                        {
-                            OrderDeviceInfo item = new OrderDeviceInfo();
-
-                            item.OrdDvcIndex = !reader.IsDBNull(ordDvcIndexCol)
-                                ? reader.GetInt16(ordDvcIndexCol).ToString()
-                                : string.Empty;
-
-                            item.OptionBits = reader["OptionBits"] as string ?? string.Empty;
-
-                            item.NomeOrderDevice = reader["NomeOrderDevice"] as string ?? string.Empty;
-                            // FIX: Assegnazione corretta degli ID
-                            item.PrimaryID = reader["PrimaryID"] != DBNull.Value ? Convert.ToInt32(reader["PrimaryID"]) : 0;
-                            item.BackupID = reader["SecondaryBackupID"] != DBNull.Value ? Convert.ToInt32(reader["SecondaryBackupID"]) : 0;
-
-                            item.IPPrinter = reader["IP_Printer"] as string ?? string.Empty;
-                            item.PrinterName = reader["PrinterName"] as string ?? string.Empty;
-
-                            // FIX: Parsing sicuro per la porta
-                            //if (reader["Porta_Printer"] != DBNull.Value && int.TryParse(reader["Porta_Printer"].ToString(), out int portaPrn))
-                            //    item.PortaPrinter = portaPrn;
-
-                            item.PortaPrinter = 9100;
-                            item.RvcID = reader["RevCtrID"] != DBNull.Value ? Convert.ToInt32(reader["RevCtrID"]) : 0;
-
-                            item.IPBackup = reader["IP_Backup"] as string ?? string.Empty;
-                            item.BackupName = reader["BackupName"] as string ?? string.Empty;
-                            item.TypeOD = reader["TypeOD"] as string ?? string.Empty;
-                            // FIX: Parsing sicuro per la porta di backup
-                            //if (reader["Porta_Backup"] != DBNull.Value && int.TryParse(reader["Porta_Backup"].ToString(), out int portaBak))
-                            //    item.PortaBackup = portaBak;
-
-                            item.PortaBackup = 9100;
-                            if (!string.IsNullOrEmpty(item.OrdDvcIndex) && !_items.ContainsKey(item.OrdDvcIndex))
-                            {
-                                _items.Add(item.OrdDvcIndex, item);
-                            }
-                        }
-                    }
+                var primaryPrinter = printers.FirstOrDefault(p => p.PrinterID == device.Value.PrimaryID);
+                if (primaryPrinter != null || primaryPrinter.ServiceHost.ServiceHostID.Valid || !string.IsNullOrEmpty(primaryPrinter.ConfigurationString))
+                {
+                    item.IPPrinter = primaryPrinter.ConfigurationString.Split(',')[0];
+                    item.PrinterName = primaryPrinter.Name.ToString();
+                    item.PortaPrinter = 9100;
                 }
-            }
-        */
-        public void Load(int revCtrId, int wksID)
-        {
-            _items.Clear();
-
-            string query = _dbFactory.TipoDB == 2 ? _queryMySql : _querySqlServer;
-
-            // Creazione e apertura gestite dalla Factory
-            using (DbConnection conn = _dbFactory.CreateConnection())
-            {
-                using (DbCommand cmd = conn.CreateCommand())
+                var backPrinter = printers.FirstOrDefault(p => p.PrinterID == device.Value.SecondaryBackupID);
+                if (backPrinter != null && (backPrinter.ServiceHost.ServiceHostID.Valid || !string.IsNullOrEmpty(backPrinter.ConfigurationString)))
                 {
-                    cmd.CommandText = query;
+                    item.IPBackup = backPrinter.ConfigurationString.Split(',')[0];
+                    item.BackupName = backPrinter.Name.ToString();
+                    item.PortaBackup = 9100;
+                }
 
-                    // Creazione generica dei parametri (sostituisce AddWithValue)
-                    DbParameter paramRev = cmd.CreateParameter();
-                    paramRev.ParameterName = "@RevCtrID";
-                    paramRev.Value = revCtrId;
-                    cmd.Parameters.Add(paramRev);
-
-                    DbParameter paramWks = cmd.CreateParameter();
-                    paramWks.ParameterName = "@WksID";
-                    paramWks.Value = wksID;
-                    cmd.Parameters.Add(paramWks);
-
-                    using (DbDataReader reader = cmd.ExecuteReader())
-                    {
-                        int ordDvcIndexCol = reader.GetOrdinal("OrdDvcIndex");
-
-                        while (reader.Read())
-                        {
-                            OrderDeviceInfo item = new OrderDeviceInfo();
-
-                            item.OrdDvcIndex = !reader.IsDBNull(ordDvcIndexCol)
-                                ? reader.GetInt16(ordDvcIndexCol).ToString()
-                                : string.Empty;
-
-                            item.OptionBits = reader["OptionBits"] as string ?? string.Empty;
-                            item.NomeOrderDevice = reader["NomeOrderDevice"] as string ?? string.Empty;
-
-                            item.PrimaryID = reader["PrimaryID"] != DBNull.Value ? Convert.ToInt32(reader["PrimaryID"]) : 0;
-                            item.BackupID = reader["SecondaryBackupID"] != DBNull.Value ? Convert.ToInt32(reader["SecondaryBackupID"]) : 0;
-
-                            item.IPPrinter = reader["IP_Printer"] as string ?? string.Empty;
-                            item.PrinterName = reader["PrinterName"] as string ?? string.Empty;
-
-                            // Porte fisse per ora come da tuo codice
-                            item.PortaPrinter = 9100;
-
-                            item.RvcID = reader["RevCtrID"] != DBNull.Value ? Convert.ToInt32(reader["RevCtrID"]) : 0;
-
-                            item.IPBackup = reader["IP_Backup"] as string ?? string.Empty;
-                            item.BackupName = reader["BackupName"] as string ?? string.Empty;
-                            item.TypeOD = reader["TypeOD"] as string ?? string.Empty;
-
-                            item.PortaBackup = 9100;
-
-                            if (!string.IsNullOrEmpty(item.OrdDvcIndex) && !_items.ContainsKey(item.OrdDvcIndex))
-                            {
-                                _items.Add(item.OrdDvcIndex, item);
-                            }
-                        }
-                    }
+                if (!string.IsNullOrEmpty(item.OrdDvcIndex) && !_items.ContainsKey(item.OrdDvcIndex))
+                {
+                    _items.Add(item.OrdDvcIndex, item);
                 }
             }
         }
 
-        /*
-        private void LoadSqlServer(int revCtrId, int wksID)
-        {
-            _items.Clear();
-
-            using (SqlConnection conn = new SqlConnection(_connectionString))
-            {
-                conn.Open();
-
-                using (SqlCommand cmd = new SqlCommand(_querySqlServer, conn))
-                {
-                    cmd.Parameters.AddWithValue("@RevCtrID", revCtrId);
-                    cmd.Parameters.AddWithValue("@WksID", wksID);
-
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        int ordDvcIndexCol = reader.GetOrdinal("OrdDvcIndex");
-
-                        while (reader.Read())
-                        {
-                            OrderDeviceInfo item = new OrderDeviceInfo();
-
-                            item.OrdDvcIndex = !reader.IsDBNull(ordDvcIndexCol)
-                                ? reader.GetInt16(ordDvcIndexCol).ToString()
-                                : string.Empty;
-
-                            item.OptionBits = reader["OptionBits"] as string ?? string.Empty;
-
-                            item.NomeOrderDevice = reader["NomeOrderDevice"] as string ?? string.Empty;
-
-                            item.PrimaryID = reader["PrimaryID"] != DBNull.Value ? Convert.ToInt32(reader["PrimaryID"]) : 0;
-                            item.BackupID = reader["SecondaryBackupID"] != DBNull.Value ? Convert.ToInt32(reader["SecondaryBackupID"]) : 0;
-
-                            item.IPPrinter = reader["IP_Printer"] as string ?? string.Empty;
-                            item.PrinterName = reader["PrinterName"] as string ?? string.Empty;
-
-                            // Parsing della porta con sicurezza per gestire eventuali terzi parametri ignorati
-                            // string portaPrnStr = reader["Porta_Printer"] as string ?? string.Empty;
-                            // if (portaPrnStr.Contains(",")) portaPrnStr = portaPrnStr.Split(',')[0];
-                            // if (int.TryParse(portaPrnStr, out int portaPrn))
-                            //    item.PortaPrinter = portaPrn;
-                            item.PortaPrinter = 9100;
-
-                            item.RvcID = reader["RevCtrID"] != DBNull.Value ? Convert.ToInt32(reader["RevCtrID"]) : 0;
-
-                            item.IPBackup = reader["IP_Backup"] as string ?? string.Empty;
-                            item.BackupName = reader["BackupName"] as string ?? string.Empty;
-                            item.TypeOD = reader["TypeOD"] as string ?? string.Empty;
-                            // string portaBakStr = reader["Porta_Backup"] as string ?? string.Empty;
-                            // if (portaBakStr.Contains(",")) portaBakStr = portaBakStr.Split(',')[0];
-                            // if (int.TryParse(portaBakStr, out int portaBak))
-                            //    item.PortaBackup = portaBak;
-                            item.PortaBackup = 9100;
-
-                            if (!string.IsNullOrEmpty(item.OrdDvcIndex) && !_items.ContainsKey(item.OrdDvcIndex))
-                            {
-                                _items.Add(item.OrdDvcIndex, item);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        */
-
-        // Mantenuto un solo metodo di recupero per evitare duplicazioni
         public OrderDeviceInfo GetDevice(int ordDvcIndex)
         {
             if (_items.TryGetValue(ordDvcIndex.ToString(), out OrderDeviceInfo device))
@@ -615,13 +301,12 @@ namespace RunPass
             return _items.Values.GetEnumerator();
         }
 
-        // Ritorna l'enumeratore non generico (richiesto dall'interfaccia base IEnumerable)
+
         IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
         }
 
-        // Rinominato per riflettere il vero contenuto dell'oggetto
         public class OrderDeviceInfo
         {
             public string OrdDvcIndex { get; set; }
@@ -688,7 +373,6 @@ namespace RunPass
 
     public class AggiornaDatiComandaEventArgs : EventArgs
     {
-        //public DatiComanda DatiComanda { get; private set; }
         public AggiornaDatiComandaEventArgs()//DatiComanda datiComanda)
         {
             //DatiComanda = datiComanda;
@@ -712,7 +396,6 @@ namespace RunPass
         public int corsalimite { get; private set; }
         public int corsaattuale { get; private set; }
         public HashSet<int> corsemarciate { get; private set; }
-        //public Dictionary<int, List<int>> corseattuali { get; private set; }
         public Dictionary<int, (List<int> Articoli, bool InviataStampa)> corseattuali { get; private set; }
         public Dictionary<int, string> altrecorse { get; private set; }
         public event EventHandler AggiornaDatiComanda;
@@ -720,7 +403,7 @@ namespace RunPass
         public bool inviatastampa { get; private set; } = false;
 
         // COSTRUTTORE
-        public GestioneCorse(int corsainiz, int corsalim, Dictionary<int, string> paraltrecorse, RunPassLogic rpl )//, int predessert, int dessert, int petitfour)
+        public GestioneCorse(int corsainiz, int corsalim, Dictionary<int, string> paraltrecorse, RunPassLogic rpl)//, int predessert, int dessert, int petitfour)
         {
             altrecorse = paraltrecorse;
             corsemarciate = new HashSet<int>();
@@ -729,7 +412,7 @@ namespace RunPass
             corsalimite = corsalim;
             corsaattuale = corsainiz;
             corsaManager = rpl;
-            
+
         }
 
         //METODI EVENTI
@@ -739,7 +422,6 @@ namespace RunPass
         }
         protected virtual void OnAggiungMarciato(AggiungiMarciatoArgs e)
         {
-            // Il '?' controlla che ci sia almeno un iscritto all'evento prima di invocarlo
             AggiungMarciato?.Invoke(this, e);
         }
 
@@ -759,7 +441,7 @@ namespace RunPass
             return TipoCorsaEnum.NonGestita;
         }
         private bool SePrimaCorsa(int corsa)
-        { 
+        {
             return (!corseattuali.Keys.Any(idCorsa => SeCorsaIterabile(idCorsa)) && !corsemarciate.Any());
         }
         private void ImpostaCorsa(bool aggDatiComanda = true)
@@ -772,8 +454,6 @@ namespace RunPass
         }
         public string OttieniStringaMarciate()
         {
-            //HashSet<int> valori = _gestioneCorse.GetCorseMarciate();
-            // Controllo di sicurezza nel caso l'HashSet sia nullo
             if (corsemarciate == null || corsemarciate.Count == 0)
             {
                 return "Nessuna Marciata"; // Lista CorseMarciate Vuota
@@ -799,14 +479,6 @@ namespace RunPass
         }
         private string NomeAltraCorsa(int numeroCorsa)
         {
-            /*if (corsapredessert == numeroCorsa)
-                return "Pre-Dessert";
-            else if (corsadessert == numeroCorsa)
-                return "Dessert";
-            else if (corsapetitfour == numeroCorsa)
-                return "petitFour";
-            else
-                return null;*/
             if (altrecorse.ContainsKey(numeroCorsa))
                 return altrecorse[numeroCorsa];
             else
@@ -860,9 +532,9 @@ namespace RunPass
         }
         public List<(string Tipo, string Testo)> Intestazione()
         {
-            List<(string Tipo, string Testo)> intestazione = new List<(string Tipo, string Testo)>();   
-            intestazione.Add(("",testoMessaggio(string.Format("Corsa {0}", CorsaAttuale()), 40)));
-            intestazione.Add(("",testoMessaggio(OttieniStringaMarciate(), 40)));
+            List<(string Tipo, string Testo)> intestazione = new List<(string Tipo, string Testo)>();
+            intestazione.Add(("", testoMessaggio(string.Format("Corsa {0}", CorsaAttuale()), 40)));
+            intestazione.Add(("", testoMessaggio(OttieniStringaMarciate(), 40)));
             bool immediata = SeImmediata(CorsaAttuale());
             string tipo = immediata ? "3" : "2";
             string testo = immediata ? "Immediata" : "A Seguire";
@@ -871,7 +543,6 @@ namespace RunPass
         }
         public string DatiIntestazione()
         {
-            //string strUsate = string.Join(",", corseattuali.Keys);
             string strMarciate = string.Join(",", corsemarciate);
 
             string dati = $"{strMarciate}";
@@ -913,9 +584,8 @@ namespace RunPass
             {
                 AddMarciata(corseusate.Single());
             }
-            //else
             if (aggDatiComanda) OnAggiornaDatiComanda();
-                
+
 
         }
         public void SetCorseMarciate(string stringaDati, bool aggDatiComanda = true)
@@ -933,9 +603,9 @@ namespace RunPass
         }
         public void SetCorsa(int corsa)
         {
-            if (SeCorsaIterabile(corsa)) 
-            { 
-                corsaattuale = corsa; 
+            if (SeCorsaIterabile(corsa))
+            {
+                corsaattuale = corsa;
                 OnAggiornaDatiComanda();
             }
         }
@@ -945,7 +615,7 @@ namespace RunPass
             .Where(kvp => SeCorsaMarciabile(kvp.Key))
             .Select(kvp => kvp.Key)
             .ToArray();
-            corsaattuale = corsaManager.EseguiCCS(corsainiziale,corsalimite,corsaattuale,corsemarciate.ToArray(), chiaviFiltrate);
+            corsaattuale = corsaManager.EseguiCCS(corsainiziale, corsalimite, corsaattuale, corsemarciate.ToArray(), chiaviFiltrate);
             OnAggiornaDatiComanda();
         }
         public void AddMarciata(int corsa)
@@ -975,142 +645,6 @@ namespace RunPass
 
                 return $"-{spaziSX}{input}{spaziDX}-";
             }
-        }
-    }
-
-    public interface ICorseRepository
-    {
-        Task<List<NomiCorse>> OttieniNomiCorseAsync();
-    }
-
-    public class CorseRepository : ICorseRepository
-    {
-        private readonly IDbConnectionFactory _dbFactory;
-
-        // Qui incollerai per intero la tua query MySQL (con WITH RECURSIVE)
-        private readonly string _queryMySql = @"
-            WITH RECURSIVE albero AS
-            (
-                SELECT hs.HierStrucID, hs.HierUnitID, 0 AS Livello
-                FROM datastore.hierarchy_structure hs
-                WHERE hs.ParentHierStrucID IS NULL
-
-                UNION ALL
-
-                SELECT hs.HierStrucID, hs.HierUnitID, a.Livello + 1 AS Livello
-                FROM datastore.hierarchy_structure hs
-                INNER JOIN albero a 
-                    ON hs.ParentHierStrucID = a.HierStrucID
-            ),
-            Livelli AS
-            (
-                SELECT 
-                    a.HierStrucID,
-                    nam.StringText AS Nome,
-                    MAX(a.Livello) OVER (PARTITION BY a.HierUnitID) AS Livello
-                FROM albero a
-                INNER JOIN datastore.hierarchy_unit hu 
-                    ON a.HierUnitID = hu.HierUnitID
-                INNER JOIN datastore.string_table nam 
-                    ON hu.NameID = nam.StringNumberID
-            ),
-            Course AS
-            (
-                SELECT cou.ObjectNumber CorsaNum,
-                       nam.StringText CorsaNome,
-                       lvl.HierStrucID,
-                       lvl.Nome,
-                       lvl.Livello
-                FROM datastore.dining_course cou
-                INNER JOIN datastore.string_table nam ON cou.NameID=nam.StringNumberID
-                LEFT JOIN Livelli lvl 
-                    ON cou.HierStrucID = lvl.HierStrucID
-            ),
-            CuorsePriceMax AS
-            (
-                SELECT *,
-                       ROW_NUMBER() OVER
-                       (
-                           PARTITION BY CorsaNum
-                           ORDER BY Livello DESC
-                       ) AS rn
-                FROM Course
-            )
-            SELECT 0 as CorsaNum, 'No Corsa' as CorsaNome
-            UNION ALL
-            SELECT CorsaNum, CorsaNome
-            FROM CuorsePriceMax
-            WHERE rn=1";
-
-        // Qui incollerai per intero la tua query SQL Server (senza RECURSIVE)
-        private readonly string _querySqlServer = @"
-            WITH albero AS
-            (
-                SELECT hs.HierStrucID, hs.HierUnitID, 0 AS Livello
-                FROM datastore.dbo.hierarchy_structure hs
-                WHERE hs.ParentHierStrucID IS NULL
-                UNION ALL
-                SELECT hs.HierStrucID, hs.HierUnitID, a.Livello + 1 AS Livello
-                FROM datastore.dbo.hierarchy_structure hs
-                INNER JOIN albero a ON hs.ParentHierStrucID = a.HierStrucID
-            ),
-            Livelli AS (
-                SELECT a.HierStrucID, nam.StringText AS Nome,
-                       MAX(a.Livello) OVER (PARTITION BY a.HierUnitID) AS Livello
-                FROM albero a
-                INNER JOIN datastore.dbo.hierarchy_unit hu ON a.HierUnitID = hu.HierUnitID
-                INNER JOIN datastore.dbo.string_table nam ON hu.NameID = nam.StringNumberID
-            ),
-            Course AS (
-                SELECT cou.ObjectNumber CorsaNum, nam.StringText CorsaNome,
-                       lvl.HierStrucID, lvl.Nome, lvl.Livello
-                FROM datastore.dbo.dining_course cou
-                INNER JOIN datastore.dbo.string_table nam ON cou.NameID=nam.StringNumberID
-                LEFT JOIN Livelli lvl ON cou.HierStrucID = lvl.HierStrucID
-            ),
-            CuorsePriceMax AS (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY CorsaNum ORDER BY Livello DESC) AS rn
-                FROM Course
-            )
-            SELECT 0 as CorsaNum, 'No Corsa' as CorsaNome
-            UNION ALL
-            SELECT CorsaNum, CorsaNome FROM CuorsePriceMax WHERE rn=1";
-
-        public CorseRepository(IDbConnectionFactory dbFactory)
-        {
-            _dbFactory = dbFactory;
-        }
-
-        // Firma corretta che rispetta l'interfaccia!
-        public async Task<List<NomiCorse>> OttieniNomiCorseAsync()
-        {
-            var risultati = new List<NomiCorse>();
-
-            // La factory ci dice che DB stiamo usando, scegliamo la query corretta
-            string query = _dbFactory.TipoDB == 2 ? _queryMySql : _querySqlServer;
-
-            // Usiamo DbConnection per avere accesso ai metodi asincroni
-            using (DbConnection connection = _dbFactory.CreateConnection())
-            {
-                using (DbCommand command = connection.CreateCommand())
-                {
-                    command.CommandText = query;
-
-                    // Ora possiamo usare ExecuteReaderAsync() senza problemi
-                    using (DbDataReader reader = await command.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            risultati.Add(new NomiCorse
-                            {
-                                CorsaNum = Convert.ToInt32(reader["CorsaNum"]),
-                                CorsaNome = reader["CorsaNome"] != DBNull.Value ? reader["CorsaNome"].ToString() : null
-                            });
-                        }
-                    }
-                }
-            }
-            return risultati;
         }
     }
 
@@ -1294,7 +828,7 @@ namespace RunPass
             }
         }
     }
-   
+
     public class Ambiente
     {
         public bool Ce { get; set; } = false;
@@ -1305,9 +839,9 @@ namespace RunPass
         public int TipoDB { get; set; } = 0;
         public int ActualRvc { get; set; } = 0;
         public string ConnStringMySq { get; } = "Server=127.0.0.1;Database=datastore;";
-        public string ConnStringSqlServer { get; }  = "Server=LocalHost\\SQlExpress;Database=datastore;";
-        public string Account { get; }  = "Uid=chkrdy;Pwd=chkrdy1$;";
-        public string ConnString { get; set; }  = "";
+        public string ConnStringSqlServer { get; } = "Server=LocalHost\\SQlExpress;Database=datastore;";
+        public string Account { get; } = "Uid=chkrdy;Pwd=chkrdy1$;";
+        public string ConnString { get; set; } = "";
     }
 
     public class Application : OpsExtensibilityApplication
@@ -1334,11 +868,10 @@ namespace RunPass
             }
             return null;
         }
-        private MyConfig _config; 
+        private MyConfig _config;
         private List<MenuTemplate> _listaMenu;
         private OrderDeviceCache _device;
         private GestioneCorse _gestioneCorse;
-        private IDbConnectionFactory _dbFactory;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _processedPrints =
                 new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
         private Encoding _codificaStampante;
@@ -1351,7 +884,6 @@ namespace RunPass
             this.OpsSignInEvent += GestSignIn;
             this.OpsBeginCheckEvent += GestNewCheck;
             this.OpsPickUpCheckEvent += GestPickupCheck;
-            //this.OpsMiPreviewEvent += GestPreviewMI;
             this.OpsMiEvent += GestNewItem;
             //this.OpsItemSelectedEvent += ItemSelected;
             //this.OpsSelectedItemCompleteQueryEvent += SelectedItemCompleteQuery;
@@ -1378,22 +910,20 @@ namespace RunPass
 
         private bool VerCourseMng()
         {
-            if (/*!_coursemng_enable ||*/ !ambiente.Ce)
+            if (!ambiente.Ce)
             {
-                //OpsContext.ShowMessage(messageSow("Cous Disabilitata"));
                 myLog.Debug("B995B0B1 - Course Management non Attiva");
             }
-            return ambiente.Ce;// _coursemng_enable;
+            return ambiente.Ce;
         }
 
         private bool VerMenuItem()
         {
-            if (/*!_menu_enable ||*/ !ambiente.Me)
+            if (!ambiente.Me)
             {
-                //OpsContext.ShowMessage(messageSow("Estensione Disabilitata"));
                 myLog.Debug("FC569513 - Gestione Menu non Attiva");
             }
-            return ambiente.Me;// _menu_enable;
+            return ambiente.Me;
         }
 
         private EventProcessingInstruction GestVoidItem(object sender, OpsMenuItemEventArgs args)
@@ -1405,10 +935,9 @@ namespace RunPass
 
             var rigaTrovata = OpsContext.CheckDetail.FirstOrDefault(r => r.DetailLink == args.VoidDetailLink);
             if (rigaTrovata == null) return EventProcessingInstruction.Continue;
-            
+
             bool seLblMarciato = _config.SeOrdineMarcia(args.MiMaster.ObjectNumber);
             bool seInviato = (rigaTrovata.DetailPostingTime.Year > 1);
-            //int voiddetaillink = args.VoidDetailLink;
             int corsaArticolo = ((Micros.PosCore.Extensibility.Ops.OpsMenuItemDetail)rigaTrovata).KdsCourseNum;
             if (seLblMarciato)
             {
@@ -1422,10 +951,7 @@ namespace RunPass
                     _gestioneCorse.RemoveMarciata(corsaArticolo);
                 }
             }
-            //else
-            //{
             _gestioneCorse.AggiornaCorse(OpsContext.CheckDetail, true);
-            //}
             AggiornaTitoli();
             return EventProcessingInstruction.Continue;
         }
@@ -1443,7 +969,7 @@ namespace RunPass
 
             _codificaStampante = Encoding.GetEncoding(_config.CodificaStampante);
 
-            
+
             myLog.Debug("OpsInitEvent");
             myLog.Debug(string.Format("Versione Assemby {0}", Assembly.GetExecutingAssembly().GetName().Version.ToString()));
 
@@ -1457,61 +983,11 @@ namespace RunPass
                 OpsContext.ShowMessage("Run Pass Disabilitata. Codice licenza non valido");
                 myLog.Error("Run Pass Disabilitata. Codice licenza non valido");
             }
-            else if (IsTodayAfterMonthAndYear(ambiente.AnnoScadenza,ambiente.MeseScadenza))
+            else if (IsTodayAfterMonthAndYear(ambiente.AnnoScadenza, ambiente.MeseScadenza))
             {
                 ambiente.Ee = false;
                 OpsContext.ShowMessage("Run Pass Disabilitata. Licenza scaduta");
                 myLog.Error("Run Pass Disabilitata. Licenza scaduta");
-            }
-
-#pragma warning disable 0618
-            var dataStoreold = OpsContext.DataStore;
-#pragma warning restore 0618           
-            
-            var dbSettingsField = dataStoreold.GetType().GetField("_dbSettings", BindingFlags.NonPublic | BindingFlags.Instance);
-
-            if (dbSettingsField != null)
-            {
-                // Otteniamo l'istanza reale di SimphonyUtilities.Settings.DatabaseSettings
-                var dbSettingsObj = dbSettingsField.GetValue(dataStoreold);
-
-                if (dbSettingsObj != null)
-                {
-                    // 3. Recupero della proprietà DatabaseType (potrebbe essere pubblica, ma per sicurezza cerchiamo ovunque)
-                    var dbTypeProp = dbSettingsObj.GetType().GetProperty("DatabaseType", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-
-                    if (dbTypeProp != null)
-                    {
-                        // Otteniamo il valore vero e proprio
-                        var databaseType = dbTypeProp.GetValue(dbSettingsObj);
-
-                        // Dato che DatabaseType è un Enum, spesso è comodo farne il cast a int per i controlli.
-                        // Come si nota nel sorgente decompilato: (int)_dbSettings.DatabaseType != 1
-                        ambiente.TipoDB = (int)databaseType;
-
-                        if (ambiente.TipoDB == 0)
-                        {
-                            ambiente.ConnString = string.Format("{0}{1}", ambiente.ConnStringSqlServer, ambiente.Account);
-                        }
-                        
-                        else if (ambiente.TipoDB == 2) 
-                        {
-                            // Logica MS SQL
-                            ambiente.ConnString = string.Format("{0}{1}", ambiente.ConnStringMySq, ambiente.Account);
-                        }
-                        else //if (_tipoDB == 1)
-                        {
-                            // Errore Database non supportato
-                            OpsContext.ShowMessage(messageSow("Database non supportato Extension disabilitata "));
-                            myLog.Error("30F2188A - Database non supportato Extension disabilitata ");
-                            ambiente.Ee = false; // _extensionEnbled = false;
-                        }
-                    }
-                }
-            }
-            if (ambiente.Ee) //(_extensionEnbled)
-            {
-                _dbFactory = new DbConnectionFactory(ambiente.TipoDB, ambiente.ConnString);
             }
             return EventProcessingInstruction.Continue;
         }
@@ -1568,9 +1044,8 @@ namespace RunPass
             return dati;
         }
 
-        private List<MenuItemPrint> PreparaListaArticoliComanda(OpsCustomOrderDeviceEventArgs args, List<NomiCorse> corse)
+        private List<MenuItemPrint> PreparaListaArticoliComanda(OpsCustomOrderDeviceEventArgs args, Dictionary<int, string> corse)
         {
-            //_gestioneCorse.VerificaPrimaCorsaMarciata();  //Verifica che ci sia almeno una corsa marciata, se non c'è la imposta alla prima corsa usata
             _gestioneCorse.Stampata(); // Imposta la variabile InviataStampa a true, in modo da sapere se è già stata stampata almeno una volta
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
             try
@@ -1591,7 +1066,7 @@ namespace RunPass
                     miobjnum = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).MiObjNum;
                     nomeArt = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).Name.ToString();
                     corsanum = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).KdsCourseNum;
-                    corsaart = corse[corsanum].CorsaNome;
+                    corsaart = corse[corsanum];
                     quant = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).SalesCount.ToString();
                     price = (((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).Total / ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).SalesCount).ToString();
                     seatart = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).Seat.ToString();
@@ -1620,9 +1095,9 @@ namespace RunPass
                         ListaCondiment.Add(Condiments);
                     }
 
-                    bool newart =true;
+                    bool newart = true;
                     if (ListaCondiment == null || ListaCondiment.Count == 0)
-                    { 
+                    {
                         MenuItemPrint risultato = ListaArticoli.FirstOrDefault(artic => artic.miobjnum == miobjnum && (artic.numcorsa == corsanum) && (artic.condiments == null || artic.condiments.Count == 0));
                         if (risultato != null)
                         {
@@ -1662,12 +1137,12 @@ namespace RunPass
             return dati;
         }
 
-        private List<MenuItemPrint> PreparaListaArticoliComandaTest(List<NomiCorse> corse)
+        private List<MenuItemPrint> PreparaListaArticoliComandaTest(Dictionary<int, string> corse)
         {
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
             try
             {
-                
+
                 string nomeArt = "";
                 string quant = "";
                 string price = "";
@@ -1677,19 +1152,15 @@ namespace RunPass
                 string seatart;
                 string pesoart = "";
 
-                // asticolo 1
+                // articolo 1
                 nomeArt = "Articolo 1";
                 corsanum = 1;
-                corsaart = corse[corsanum - 1].CorsaNome;
+                corsaart = corse[corsanum - 1];
                 quant = "1";
                 price = "11.00";
                 seatart = "1";
                 referenceArt = "refer Articolo 1";
                 pesoart = "1.100";
-
-                //var conds = item.DetailItem;
-                //var listcond = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)conds).Condiments;
-
 
                 string nomeCond = "";
                 string quantCond = "";
@@ -1713,14 +1184,12 @@ namespace RunPass
                 // asticolo 2
                 nomeArt = "Articolo 2";
                 corsanum = 2;
-                corsaart = corse[corsanum - 1].CorsaNome;
+                corsaart = corse[corsanum - 1];
                 quant = "1";
                 price = "12.00";
                 seatart = "1";
                 referenceArt = "refer Articolo 2";
                 pesoart = "";
-                //var conds = item.DetailItem;
-                //var listcond = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)conds).Condiments;
 
 
                 nomeCond = "Condimento 1 di 2";
@@ -1770,18 +1239,16 @@ namespace RunPass
 
         private EventProcessingInstruction GestOpsCustomOrderDeviceEventArgs(object sender, OpsCustomOrderDeviceEventArgs args)
         {
-
-            //if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("OpsCustomOrderDeviceEventArgs"));
             myLog.Debug("OpsCustomOrderDeviceEventArgs");
             if (!VerExtension()) return EventProcessingInstruction.Continue;
             if (!VerCourseMng()) return EventProcessingInstruction.Continue;
 
-            if (_config.Testmode==1)
+            if (_config.Testmode == 1)
             {
                 myLog.Debug("Test Mode no stampa");
-                return EventProcessingInstruction.Continue; 
+                return EventProcessingInstruction.Continue;
             }
-            
+
             // Test verifica trattasi print di backup
             var fingerprintLines = args.Detail
                 .Where(d => d != null && !string.IsNullOrEmpty(d.MiName))
@@ -1803,10 +1270,7 @@ namespace RunPass
             // Fine test
 
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
-            //List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
-            List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
-
-            //DatiComanda datiComanda = PreparaDatiComanda(_CorseMarciate.Max());
+            Dictionary<int, string> corse = LeggiNomiCorse();
             DatiComanda datiComanda = PreparaDatiComanda();
 
             List<byte> payload = new List<byte>();
@@ -1848,11 +1312,11 @@ namespace RunPass
                             stampaComanda(payload.ToArray(), device);
                         }
                     }
+                }
             }
-        }
-        return EventProcessingInstruction.Continue;
+            return EventProcessingInstruction.Continue;
 
-     }
+        }
 
         private void stampaComanda(byte[] data, OrderDeviceCache.OrderDeviceInfo device, bool test = false)
         {
@@ -1860,41 +1324,6 @@ namespace RunPass
             if (device.IPBackup != null) primoTent = true;
             if (TestConnessioneStampante(device.IPPrinter, device.PortaPrinter, test, primoTent))
             {
-                /*using (TcpClient client = new TcpClient())
-                {
-
-                    try
-                    {
-
-                        client.Connect(device.IPPrinter, device.PortaPrinter);
-
-
-                        using (NetworkStream stream = client.GetStream())
-                        {
-                            //OpsContext.ShowMessage(data.ToString());
-                            stream.Write(data, 0, data.Length);
-                            stream.Flush();
-
-                        }
-                        if (test)
-                        {
-                            Console.WriteLine($"Comanda Stampata");
-                            myLog.Debug("Comanda Stampata");
-                        }
-                    }
-                    catch (SocketException ex)
-                    {
-                        // Gestione degli errori di rete (es. stampante spenta o IP errato)
-                        Console.WriteLine($"Errore di rete durante la connessione alla stampante: {device.IPPrinter}:{device.PortaPrinter}");
-                        myLog.Error($"9E11D85E - Errore stampante: {device.IPPrinter}:{device.PortaPrinter}", ex);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Gestione degli errori generici
-                        Console.WriteLine($"Errore stampa");
-                        myLog.Error($"C2DF02C8 - Errore stampa: {device.IPPrinter}:{device.PortaPrinter}", ex);
-                    }
-                }*/
                 stampaScontrino(data, device.IPPrinter, device.PortaPrinter, test);
             }
             else
@@ -1919,7 +1348,6 @@ namespace RunPass
 
                     using (NetworkStream stream = client.GetStream())
                     {
-                        //OpsContext.ShowMessage(data.ToString());
                         stream.Write(data, 0, data.Length);
                         stream.Flush();
 
@@ -2017,7 +1445,7 @@ namespace RunPass
             payload.AddRange(Corpo_000(datiComanda, listaArticoli));
 
             //Footer
-            payload.AddRange(Footer_000(datiComanda ));
+            payload.AddRange(Footer_000(datiComanda));
 
             // Taglio carta
             payload.AddRange(EscPos.LineFeed3);
@@ -2102,7 +1530,6 @@ namespace RunPass
                         corpo.AddRange(EscPos.ColorInv);
                         riga = string.Format("\r\nSegue {0}\r\n\r\n", articolo.corsa);
                     }
-                    //corpo.AddRange(_codificaStampante.GetBytes(riga));
                     corpo.AddRange(_codificaStampante.GetBytes(riga));
                     corsacorr = numcorsa;
                 }
@@ -2117,7 +1544,6 @@ namespace RunPass
                 if (articolo.reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.reference.Substring(0, _config.LunghNomeArticoli - 1));
                 StringBuilder art = new StringBuilder();
                 art.Append(articolo.quant);
-                //art.Append(" x ");
                 art.Append(" ");
                 if ((articolo.nome == "" || articolo.nome.StartsWith("#")) && articolo.reference != "") art.Append(refprint);
                 else art.Append(artprint);
@@ -2134,7 +1560,6 @@ namespace RunPass
                     art.Append(articolo.peso);
                     art.Append("\r\n");
                 }
-                //payload.AddRange(EscPos.TextDoubleHeight);
                 corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
                 foreach (CondimentPrint condimento in articolo.condiments)
                 {
@@ -2143,20 +1568,15 @@ namespace RunPass
                     corpo.AddRange(EscPos.TextDoubleHeight);
                     StringBuilder cond = new StringBuilder();
                     cond.Append("     ");
-                    //payload.AddRange(EscPos.Underline2);
                     if (condimento.quant != "1")
                     {
                         cond.Append(condimento.quant);
-                        //cond.Append(" x "); 
                         cond.Append(" ");
                     }
 
                     if ((condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "") cond.Append(condimento.reference);
                     else cond.Append(condimento.nome);
-                    //payload.AddRange(EscPos.NoUnderline);
-                    //cond.Append("\r\n");
 
-                    //payload.AddRange(_codificaStampante.GetBytes(cond.ToString()));
                     if (!(condimento.nome == "" || condimento.nome.StartsWith("#")) && condimento.reference != "")
                     {
                         cond.Append("\r\n     ");
@@ -2186,7 +1606,7 @@ namespace RunPass
             riga = string.Format("{0} -- {1}\r\n\r\n", datiComanda.Utente, DateTime.Now.ToString());
             footer.AddRange(_codificaStampante.GetBytes(riga));
 
-            return footer; 
+            return footer;
         }
 
         List<byte> Marcia_000(List<MenuItemPrint> listaArticoli)
@@ -2273,7 +1693,7 @@ namespace RunPass
 
             //Corpo
             payload.AddRange(Marcia_000(listaArticoli));
-            
+
             //Footer
             payload.AddRange(Footer_000(datiComanda));
 
@@ -2284,22 +1704,17 @@ namespace RunPass
 
             return payload;
         }
-                   
-        public async Task<List<NomiCorse>> LeggiNomiCorse()
-        {
-            // _dbFactory è già stato istanziato in GestInitEvent
-            ICorseRepository repository = new CorseRepository(_dbFactory);
 
-            try
+        public Dictionary<int, string> LeggiNomiCorse()
+        {
+            Dictionary<int, string> corse = new Dictionary<int, string>();
+            var allCorse = DataStore.ReadAllDiningCourses().OrderBy(c => c.ObjectNumber);
+            corse.Add(0, "No Corsa");
+            foreach (var corsa in allCorse)
             {
-                List<NomiCorse> corse = await repository.OttieniNomiCorseAsync();
-                return corse;
+                corse.Add(corsa.ObjectNumber, corsa.Name.ToString());
             }
-            catch (Exception ex)
-            {
-                myLog.Error("Errore lettura corse", ex);
-                return new List<NomiCorse>();
-            }
+            return corse;
         }
 
         private List<MenuItemPrint> PreparaListaArticoliMarcia(OpsCustomOrderDeviceEventArgs args, int corsacorr)
@@ -2310,16 +1725,12 @@ namespace RunPass
             {
                 string nomeArt = "";
                 string quant = "";
-                //string price = "";
-                //string corsaart = "";
                 int corsanum = 0;
                 string referenceArt = "";
-                //string seatart;
                 string pesoart = "";
                 string printopt = "";
-                //int ODIndex=0;
 
-                List <CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
+                List<CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
 
                 corsanum = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).KdsCourseNum;
                 if (corsanum == corsacorr)
@@ -2347,23 +1758,18 @@ namespace RunPass
                         CondimentPrint Condiments = new CondimentPrint { nome = nomeCond, quant = quantCond, reference = referenceCond, peso = pesocond };
                         ListaCondiment.Add(Condiments);
                     }
-                    //nt numdev = _device.Count();
-                    //OrderDeviceCache.OrderDeviceInfo device;
-                    //for (int odn = 1; odn < numdev; odn++)
-                    foreach (OrderDeviceCache.OrderDeviceInfo device in _device) 
-                    { 
-                        //for (int od = 1; od < 29; od++)
-                        //device = _device.GetDevice(odn);
+                    foreach (OrderDeviceCache.OrderDeviceInfo device in _device)
+                    {
                         int od = int.Parse(device.OrdDvcIndex);
                         if (printopt[7 + od] == '1')
                         {
-                                MenuItemPrint Articolo = new MenuItemPrint
-                                { quant = quant, nome = nomeArt, condiments = ListaCondiment, numcorsa = corsanum, reference = referenceArt, peso = pesoart, ODIndex = od };
-                                ListaArticoli.Add(Articolo);
+                            MenuItemPrint Articolo = new MenuItemPrint
+                            { quant = quant, nome = nomeArt, condiments = ListaCondiment, numcorsa = corsanum, reference = referenceArt, peso = pesoart, ODIndex = od };
+                            ListaArticoli.Add(Articolo);
                         }
-                      }
+                    }
 
-                    
+
                 }
             }
             return ListaArticoli;
@@ -2377,20 +1783,15 @@ namespace RunPass
             {
                 string nomeArt = "";
                 string quant = "";
-                //string price = "";
-                //string corsaart = "";
                 int corsanum = 0;
                 string referenceArt = "";
-                //string seatart;
                 string pesoart = "";
                 string printopt = "";
-                //int ODIndex=0;
 
                 if (riga is MenuItemDetail item)
                 {
                     List<CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
 
-                    //corsanum = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)item.DetailItem).KdsCourseNum;
                     corsanum = item.KdsCourseNum;
                     if (corsanum == corsacorr)
                     {
@@ -2399,7 +1800,6 @@ namespace RunPass
                         printopt = item.PrintOptionBits;
                         if (item.ReferenceEntries.Count > 0) referenceArt = item.ReferenceEntries[0].Descriptor;
 
-                        //var conds = item.Condiments;
                         var listcond = item.Condiments;
 
                         foreach (var cond in listcond)
@@ -2409,7 +1809,6 @@ namespace RunPass
                             string referenceCond = "";
                             string pesocond = "";
 
-                            //nomeCond = cond.ExpandedName;
                             nomeCond = cond.Name;
                             quantCond = cond.SalesCount.ToString();
                             if (cond.ReferenceEntries.Count > 0)
@@ -2418,13 +1817,8 @@ namespace RunPass
                             CondimentPrint Condiments = new CondimentPrint { nome = nomeCond, quant = quantCond, reference = referenceCond, peso = pesocond };
                             ListaCondiment.Add(Condiments);
                         }
-                        //nt numdev = _device.Count();
-                        //OrderDeviceCache.OrderDeviceInfo device;
-                        //for (int odn = 1; odn < numdev; odn++)
                         foreach (OrderDeviceCache.OrderDeviceInfo device in _device)
                         {
-                            //for (int od = 1; od < 29; od++)
-                            //device = _device.GetDevice(odn);
                             int od = int.Parse(device.OrdDvcIndex);
                             if (printopt[7 + od] == '1')
                             {
@@ -2477,31 +1871,14 @@ namespace RunPass
 
         private EventProcessingInstruction GestSignIn(object sender, OpsSignInPreviewEventArgs args)
         {
-            //if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(messageSow("EventSignIn"));
             myLog.Debug("EventSignIn");
 
             if (!VerExtension()) return EventProcessingInstruction.Continue;
-
-            //_coursemng_enable = _config.RvcCourseMng.Contains(OpsContext.RvcNumber);
             ambiente.Ce = _config.RvcCourseMng.Contains(OpsContext.RvcNumber);
-            //_menu_enable = _config.RvcMenu.Contains(OpsContext.RvcNumber) && _config.Suite.Count > 0; // il menu è attivo se il revenue center fa parte della lista e l'elenco dei suite non è vuoto
             ambiente.Me = _config.RvcMenu.Contains(OpsContext.RvcNumber) && _config.Suite.Count > 0; // il menu è attivo se il revenue center fa parte della lista e l'elenco dei suite non è vuoto
 
-            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) //_coursemng_enable)
-            {
-                try
-                {
-                    _device = new OrderDeviceCache(_dbFactory);
-                    _device.Load(OpsContext.RvcID, OpsContext.WorkstationID);
-                }
-                catch (Exception ex)
-                {
-                    OpsContext.ShowMessage(messageSow("Errore Lettura Device"));
-                    OpsContext.ShowMessage(messageSow(ex.Message));
-                    myLog.Error("FDC7F8AF - Errore Lettura Articoli", ex);
-                }
-            }
-
+            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
+            
             if (ambiente.Me && (_listaMenu is null || ambiente.ActualRvc != OpsContext.RvcID))
             {
                 var allContentData = DataStore.ReadAllContent(OpsContext.RvcID);
@@ -2519,6 +1896,52 @@ namespace RunPass
             return EventProcessingInstruction.Continue;
         }
 
+        private void LoadDevice()
+        {
+            _device = new OrderDeviceCache();
+            var allDevices = DataStore.ReadOrderDevices(OpsContext.RvcID);
+            var AllPrinter = DataStore.ReadPrinters();
+            var ThisWks = DataStore.ReadWorkstationByID(OpsContext.WorkstationID);
+            Micros.PosCore.Extensibility.DataStore.DbRecords.OrderDevices ODWks = ThisWks.OrderDevices;
+            HashSet<int> ODAttive = new HashSet<int>();
+            if (ODWks != null)
+            {
+                // 1. Ottieni il tipo esatto dell'oggetto
+                System.Type tipo = ODWks.GetType();
+
+                // 2. Cerca il campo "m_Data" usando i BindingFlags per includere membri privati/interni
+                FieldInfo fieldInfo = tipo.GetField("m_Data", BindingFlags.NonPublic | BindingFlags.Instance);
+
+                if (fieldInfo != null)
+                {
+                    // 3. Estrai il valore del campo dall'istanza corrente
+                    object mDataValue = fieldInfo.GetValue(ODWks);
+
+                    if (mDataValue != null)
+                    {
+                        ODAttive = EstraiPosizioniAttive(mDataValue.ToString());
+                    }
+                }
+            }
+            _device.Load(AllPrinter, allDevices, ODAttive);
+        }
+
+        private HashSet<int> EstraiPosizioniAttive(string mDataValue)
+        {
+            HashSet<int> posizioni = new HashSet<int>();
+
+            string cleanString = mDataValue.Trim('{', '}');
+
+            for (int i = 0; i < cleanString.Length; i++)
+            {
+                if (cleanString[i] == '1')
+                {
+                    posizioni.Add(i + 1);
+                }
+            }
+
+            return posizioni;
+        }
         private EventProcessingInstruction GestPickupCheck(object sender, OpsPickUpCheckEventArgs args)
         {
             myLog.Debug("EventPickupCheck");
@@ -2528,7 +1951,7 @@ namespace RunPass
             if (!VerExtension() && !VerMenuItem()) return EventProcessingInstruction.Continue;
 
             VerificaExtension(false);
-            
+
             return EventProcessingInstruction.Continue;
         }
 
@@ -2544,13 +1967,13 @@ namespace RunPass
             _gestioneCorse.AggiornaDatiComanda += GestAggiornaCorsa;
             _gestioneCorse.AggiungMarciato += GestEseguiMarcia;
 
-            if (ambiente.Ce) //_coursemng_enable)
+            if (ambiente.Ce) 
             {
                 if (!NewCheck)
                 {
                     PreparaGestioneCorse(false);
                     _gestioneCorse.AggiornaCorse(OpsContext.CheckDetail, true);
-                   }
+                }
                 AggiornaTitoli();
             }
             if (OpsContext.Check != null && ambiente.Me && (_listaMenu is null | ambiente.ActualRvc != OpsContext.RvcID))
@@ -2572,8 +1995,8 @@ namespace RunPass
         {
             myLog.Debug("EventNewCheck");
 
-            if (!VerExtension() ) return EventProcessingInstruction.Continue;
-            
+            if (!VerExtension()) return EventProcessingInstruction.Continue;
+
             if (!VerExtension() && !VerMenuItem()) return EventProcessingInstruction.Continue;
 
             VerificaExtension(true);
@@ -2583,77 +2006,77 @@ namespace RunPass
 
         private EventProcessingInstruction GestNewItem(object sender, OpsMenuItemEventArgs args)
         {
-            if (!VerExtension()) return EventProcessingInstruction.Continue; 
+            if (!VerExtension()) return EventProcessingInstruction.Continue;
 
             if (args.MiClass.OptionBits.CheckBit(2)) return EventProcessingInstruction.Continue; //Si tratta di un condimento, esco
-            
+
             if (args.MiClass.OptionBits.CheckBit(45) && VerCourseMng()) //Kdscourse attive
-            try
-            {
-                int valoreCorsa = _gestioneCorse.CorsaAttuale();
-                int valore;
-                dynamic argsDinamico = args;
                 try
                 {
-                   dynamic articolo = OpsContext.CheckContext.CheckDetail[OpsContext.CheckContext.CheckDetail.Count - 1];
-                      
-                   if (articolo != null)
-                   {
-                       valore = articolo.KdsCourseNum;
-                       bool sesorsasggiuntassomandamarciata = _gestioneCorse.SeCorsaAggiuntaAComandaFinita(valore);
-                       if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
-                       {
-                           cmdCambioCorsa(valoreCorsa);
-                       }
-                       else
-                       {
-                           valoreCorsa = valore;
-                       } //se l'articolo ha una corsa, la variabile valoreCorsa viene aggiornata con il valore della corsa dell'articolo
-                       if (sesorsasggiuntassomandamarciata)   //verifica se si tratta di una corsa 'aggiuntiva' e che non sia già presente e che siano tutte marciate
-                       {
-                           bool risposta = OpsContext.AskQuestion("Tutte le altre corse sono marciate. Procedo anche con questa?");
-                           if (risposta)
-                           {
-                               _gestioneCorse.AddMarciata(valoreCorsa);
-                           }
-                       }
-                   }
+                    int valoreCorsa = _gestioneCorse.CorsaAttuale();
+                    int valore;
+                    dynamic argsDinamico = args;
+                    try
+                    {
+                        dynamic articolo = OpsContext.CheckContext.CheckDetail[OpsContext.CheckContext.CheckDetail.Count - 1];
+
+                        if (articolo != null)
+                        {
+                            valore = articolo.KdsCourseNum;
+                            bool sesorsasggiuntassomandamarciata = _gestioneCorse.SeCorsaAggiuntaAComandaFinita(valore);
+                            if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
+                            {
+                                cmdCambioCorsa(valoreCorsa);
+                            }
+                            else
+                            {
+                                valoreCorsa = valore;
+                            } //se l'articolo ha una corsa, la variabile valoreCorsa viene aggiornata con il valore della corsa dell'articolo
+                            if (sesorsasggiuntassomandamarciata)   //verifica se si tratta di una corsa 'aggiuntiva' e che non sia già presente e che siano tutte marciate
+                            {
+                                bool risposta = OpsContext.AskQuestion("Tutte le altre corse sono marciate. Procedo anche con questa?");
+                                if (risposta)
+                                {
+                                    _gestioneCorse.AddMarciata(valoreCorsa);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        OpsContext.ShowMessage(messageSow("Errore!! "));
+                        myLog.Error("9B426026 Errore aggiunta articolo", ex);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    OpsContext.ShowMessage(messageSow("Errore!! "));
-                    myLog.Error("9B426026 Errore aggiunta articolo", ex);
+                    OpsContext.ShowMessage(messageSow("Errore2!! "));
+                    myLog.Error("3A347EE0 - Errore aggiunta articolo", ex);
                 }
-            }
-            catch (Exception ex)
-            {
-                OpsContext.ShowMessage(messageSow("Errore2!! "));
-                myLog.Error("3A347EE0 - Errore aggiunta articolo", ex);
-            }
             if (ambiente.Me)
-            try
-            {
-                MenuTemplate menuTrovato = _listaMenu.FirstOrDefault(menu => menu.MenuID == args.MiMaster.ObjectNumber);
-                if (menuTrovato != null)
+                try
                 {
-                    if (ambiente.Ce) //(_coursemng_enable)
+                    MenuTemplate menuTrovato = _listaMenu.FirstOrDefault(menu => menu.MenuID == args.MiMaster.ObjectNumber);
+                    if (menuTrovato != null)
                     {
-                       InserisciMenuWithCourse(menuTrovato, Convert.ToInt32(args.Count));
-                    }
-                    else 
-                    {
-                        InserisciMenuNoCourse(menuTrovato, Convert.ToInt32(args.Count));
+                        if (ambiente.Ce) 
+                        {
+                            InserisciMenuWithCourse(menuTrovato, Convert.ToInt32(args.Count));
+                        }
+                        else
+                        {
+                            InserisciMenuNoCourse(menuTrovato, Convert.ToInt32(args.Count));
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                OpsContext.ShowMessage(messageSow("Errore3!! "));
-                myLog.Error("CFEDA03B - Errore aggiunta articolo", ex);
-            }
+                catch (Exception ex)
+                {
+                    OpsContext.ShowMessage(messageSow("Errore3!! "));
+                    myLog.Error("CFEDA03B - Errore aggiunta articolo", ex);
+                }
             _gestioneCorse.AggiornaCorse(OpsContext.CheckDetail, true);
-                
-            
+
+
             return EventProcessingInstruction.Continue;
         }
 
@@ -2752,13 +2175,10 @@ namespace RunPass
 
         private void InserisciMenuWithCourse(MenuTemplate MenuTrovato, int numeroMenu)
         {
-
-            //insertArticolo(MenuTrovato.MenuID, numeroMenu);
-            for (int c = 1; c<21;c++)
+            for (int c = 1; c < 21; c++)
             {
-                //if (MenuTrovato.AllCourses[$"Course{c}"].Count > 0)
                 if (MenuTrovato.AllCourses.TryGetValue($"Course{c}", out List<int> courseList))
-                    { 
+                {
                     ImpostaCorsa(c);
                     foreach (int articolo in courseList)
                     {
@@ -2777,7 +2197,6 @@ namespace RunPass
             OpsCommand cmdPrezzo = new OpsCommand(OpsCommandType.AsciiData);
             OpsCommand cmdEnter = new OpsCommand(OpsCommandType.EnterKey);
             OpsCommand cmdStorno = new OpsCommand(OpsCommandType.Void);
-            //OpsCommand cmdNoPrint1 = new OpsCommand(OpsCommandType.overr)
             // Configurazione Comandi
             cmdArticolo.Number = IDarticolo;
             if (newPrice != null)
@@ -2816,13 +2235,12 @@ namespace RunPass
             if (OpsContext.Check == null)
                 return;
 
-            
+
             if (numCorsa != null)
                 _gestioneCorse.SetCorsa((int)numCorsa);
 
         }
 
-        /**/
         private void GestAggiornaCorsa(object sender, EventArgs e)
         {
             AggiornaTitoli();
@@ -2867,30 +2285,17 @@ namespace RunPass
             }
             OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.Refresh));
         }
-        
+
         private string NomeAltraCorsa(int numeroCorsa)
         {
-            /*if (_config.CorsaPreDessert.Corsa == numeroCorsa)
-                return "Pre-Dessert";
-            else if (_config.CorsaDessert.Corsa == numeroCorsa)
-                return "Dessert";
-            else if (_config.CorsaPetitFour.Corsa == numeroCorsa)
-                return "petitFour";
-            else
-                return null;*/
             if (_config.AltreCorse.ContainsKey(numeroCorsa))
                 return _config.AltreCorse[numeroCorsa];
             else
                 return null;
-
         }
 
         private void GestEseguiMarcia(object sender, EventArgs e)
         {
-            //if (_gestioneCorse.CorsaAttuale() != 0)
-            //{
-            //    EseguiMarcia(((CourseMng.AggiungiMarciatoArgs)e).corsadamarciare,true);
-            //}
             if (_config.VisualizzaMarciato == 1)
             {
                 OpsCommand cmdMarciato = new OpsCommand(OpsCommandType.MenuItem);
@@ -2900,15 +2305,14 @@ namespace RunPass
             }
         }
 
-        private void EseguiMarcia(int numCorsa, bool forzarepeat=false)
+        private void EseguiMarcia(int numCorsa, bool forzarepeat = false)
         {
             try
             {
                 if (!_gestioneCorse.SeCorsaUsata(numCorsa)) return;
                 if (_gestioneCorse.SeCorsaMarciata(numCorsa) && !forzarepeat)
                 {
-                    //OpsContext.ShowMessage(messageSow(string.Format("Corsa {0} già marciata", numCorsa)));
-                    bool risposta = OpsContext.AskQuestion($"Corsa {numCorsa} già marciata. La Re-invio?" );
+                    bool risposta = OpsContext.AskQuestion($"Corsa {numCorsa} già marciata. La Re-invio?");
                     if (!risposta)
                     {
                         return;
@@ -2918,22 +2322,19 @@ namespace RunPass
                 _gestioneCorse.AddMarciata(numCorsa);  //Quando eseguo un marcia lo aggiungo alla lista delle corse marciate
 
                 if (_config.Testmode == 0)
-                {               
+                {
 
-                List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
-                //List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
-                List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
+                    List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
+                    Dictionary<int, string> corse = LeggiNomiCorse();
 
-                //DatiComanda datiComanda = PreparaDatiComanda(_CorseMarciate.Max());
-                DatiComanda datiComanda = PreparaDatiComanda();
+                    DatiComanda datiComanda = PreparaDatiComanda();
 
-                List<byte> payload = new List<byte>();
-                byte[] data = payload.ToArray();
+                    List<byte> payload = new List<byte>();
+                    byte[] data = payload.ToArray();
 
-                //int corsaatt = ((Micros.PosCore.DataStore.DbRecords.DbMenuItemDetail)args.Detail[0].DetailItem).KdsCourseNum;
-                ListaArticoli = PreparaListaArticoliMarcia2(numCorsa);
+                    ListaArticoli = PreparaListaArticoliMarcia2(numCorsa);
 
-                string CustomName = "MA_100_00";
+                    string CustomName = "MA_100_00";
                     if (CustomName == "MA_100_00")
                     {
                         List<List<MenuItemPrint>> listaDiListe = ListaArticoli
@@ -2955,9 +2356,9 @@ namespace RunPass
                             }
                         }
                     }
-                    
+
                 }
-                else 
+                else
                 {
                     myLog.Debug("Test Mode, no stampa");
                     return;
@@ -2978,19 +2379,19 @@ namespace RunPass
                 myLog.Error("FF47CC19 - Errore Marcia", ex);
             }
         }
-        
+
         private void cmdCambioCorsa(int numCorsa)
         {
             if (!_gestioneCorse.SeCorsaUsabile(numCorsa))
-            { return;  }
+            { return; }
 
             OpsCommand cmdCondimento = new OpsCommand(OpsCommandType.MenuItem);
-            
+
             if (_gestioneCorse.SeCorsaMarciabile(numCorsa))
             {
                 cmdCondimento.Number = _config.CambioCorsa[numCorsa - 1];
             }
-            
+
             if (cmdCondimento.Number != 0)
             {
                 OpsContext.ProcessCommand(cmdCondimento);
@@ -3039,7 +2440,7 @@ namespace RunPass
 
             var rigaTrovata = OpsContext.CheckDetail.FirstOrDefault(r => r.DetailLink == OpsContext.CurrentParentItem);
             if (rigaTrovata == null) return;
-            
+
             cmdCambioCorsa(Convert.ToInt32(numCorsa));
         }
 
@@ -3048,28 +2449,15 @@ namespace RunPass
         {
             OpsContext.ShowMessage(messageSow(OpsContext.PropHierStrucID.ToString()));
         }
-        
+
         [ExtensibilityMethod]
         public void TestComanda(object OrderDevice)
         {
-            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID))
-            {
-                try
-                {
-                    _device = new OrderDeviceCache(_dbFactory);
-                    _device.Load(OpsContext.RvcID, OpsContext.WorkstationID);
-                }
-                catch (Exception ex)
-                {
-                    OpsContext.ShowMessage(messageSow("Errore Lettura Device"));
-                    OpsContext.ShowMessage(messageSow(ex.Message));
-                    myLog.Error("FDC6E8AF - Errore Lettura Articoli", ex);
-                }
-            }
+            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID)) LoadDevice();
+            
             myLog.Debug($"Inzio Stampa Comanda device {OrderDevice}");
             DatiComanda datiComanda = PreparaDatiComadaTest();
-            //List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
-            List<NomiCorse> corse = Task.Run(() => LeggiNomiCorse()).GetAwaiter().GetResult();
+            Dictionary<int, string> corse = LeggiNomiCorse();
             List<MenuItemPrint> ListaArticoli = PreparaListaArticoliComandaTest(corse);
             List<byte> payload = new List<byte>();
             byte[] data = payload.ToArray();
@@ -3092,19 +2480,18 @@ namespace RunPass
             int? successiva = _gestioneCorse.NextMarcia();
 
             if (successiva != null && successiva.Value != 0)
-               EseguiMarcia(successiva.Value);
+                EseguiMarcia(successiva.Value);
             else
-               OpsContext.ShowMessage("Le corse sono tutte marciate");
+                OpsContext.ShowMessage("Le corse sono tutte marciate");
         }
-                
+
         [ExtensibilityMethod]
         public void RepeatMarcia()
         {
             if (!VerExtension()) return;
             if (!VerCourseMng()) return;
 
-            //EseguiMarcia(_CorseMarciate.Max());
-            EseguiMarcia(_gestioneCorse.UltimaCorsaMarciataGlobale(),true);
+            EseguiMarcia(_gestioneCorse.UltimaCorsaMarciataGlobale(), true);
         }
 
         [ExtensibilityMethod]
@@ -3121,7 +2508,7 @@ namespace RunPass
             {
                 OpsContext.ShowMessage(messageSow("Apri prima un conto!"));
             }
-            
+
 
         }
 
@@ -3129,8 +2516,8 @@ namespace RunPass
         public void Status()
         {
 
-            if (!VerExtension()) return ;
-            
+            if (!VerExtension()) return;
+
             OpsContext.ShowMessage(messageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nScadenza {ambiente.MeseScadenza}/{ambiente.AnnoScadenza}\nGestione Corse abilitata {ambiente.Ce}\nGestione Menu abilitata {ambiente.Me}"));
         }
 
@@ -3144,7 +2531,7 @@ namespace RunPass
             {
                 OpsContext.ShowMessage(messageSow("Apri prima un conto!"));
                 return;
-            }  
+            }
             int corsa = _gestioneCorse.CorsaAttuale();
             if (_gestioneCorse.SeCorsaMarciata(corsa))
                 OpsContext.ShowMessage("Corsa già Marciata!");
@@ -3168,7 +2555,7 @@ namespace RunPass
                 return;
             }
             int corsa = _gestioneCorse.CorsaAttuale();
-            if(!_gestioneCorse.SeCorsaMarciata(corsa))
+            if (!_gestioneCorse.SeCorsaMarciata(corsa))
                 OpsContext.ShowMessage("Corsa non ancora Marciata!");
             else
             {

@@ -214,6 +214,7 @@ namespace RunPass
         public int CorsaLimite { get; set; } = 5;
         public long OverPrintClass { get; set; }
         public Dictionary<int, string> AltreCorse { get; set; } = new Dictionary<int, string>();
+        public Dictionary<int, long> PrintClass { get; set; } = new Dictionary<int, long>();
         public string Lbl_Marcia { get; set; }
         public int LunghNomeArticoli { get; set; } = 19;
         public int Riga_Intestazione_1 { get; set; } = 1;
@@ -763,24 +764,6 @@ namespace RunPass
         [JsonProperty("Course14")]
         public List<int> Course14 { get; set; } = new List<int>();
 
-        [JsonProperty("Course15")]
-        public List<int> Course15 { get; set; } = new List<int>();
-
-        [JsonProperty("Course16")]
-        public List<int> Course16 { get; set; } = new List<int>();
-
-        [JsonProperty("Course17")]
-        public List<int> Course17 { get; set; } = new List<int>();
-
-        [JsonProperty("Course18")]
-        public List<int> Course18 { get; set; } = new List<int>();
-
-        [JsonProperty("Course19")]
-        public List<int> Course19 { get; set; } = new List<int>();
-
-        [JsonProperty("Course20")]
-        public List<int> Course20 { get; set; } = new List<int>();
-
         [JsonProperty("PreDessert")]
         public List<int> PreDessert { get; set; } = new List<int>();
 
@@ -791,35 +774,29 @@ namespace RunPass
         public List<int> PetitFour { get; set; } = new List<int>();
 
         [JsonIgnore]
-        public Dictionary<string, List<int>> AllCourses
+        public Dictionary<int, List<int>> AllCourses
         {
             get
             {
-                var courses = new Dictionary<string, List<int>>
+                var courses = new Dictionary<int, List<int>>
             {
-                { "Course1", Course1 },
-                { "Course2", Course2 },
-                { "Course3", Course3 },
-                { "Course4", Course4 },
-                { "Course5", Course5 },
-                { "Course6", Course6 },
-                { "Course7", Course7 },
-                { "Course8", Course8 },
-                { "Course9", Course9 },
-                { "Course10", Course10 },
-                { "Course11", Course11 },
-                { "Course12", Course12 },
-                { "Course13", Course13 },
-                { "Course14", Course14 },
-                { "Course15", Course15 },
-                { "Course16", Course16 },
-                { "Course17", Course17 },
-                { "Course18", Course18 },
-                { "Course19", Course19 },
-                { "Course20", Course20 },
-                { "PreDessert", PreDessert },
-                { "Dessert", Dessert },
-                { "PetitFour", PetitFour }
+                { 1, Course1 },
+                { 2, Course2 },
+                { 3, Course3 },
+                { 4, Course4 },
+                { 5, Course5 },
+                { 6, Course6 },
+                { 7, Course7 },
+                { 8, Course8 },
+                { 9, Course9 },
+                { 10, Course10 },
+                { 11, Course11 },
+                { 12, Course12 },
+                { 13, Course13 },
+                { 14, Course14 },
+                { 15, PreDessert },
+                { 16, Dessert },
+                { 17, PetitFour }
             };
 
                 // Filtra solo le portate che hanno effettivamente dei piatti inseriti
@@ -2177,7 +2154,7 @@ namespace RunPass
         {
             for (int c = 1; c < 21; c++)
             {
-                if (MenuTrovato.AllCourses.TryGetValue($"Course{c}", out List<int> courseList))
+                if (MenuTrovato.AllCourses.TryGetValue(c, out List<int> courseList))
                 {
                     ImpostaCorsa(c);
                     foreach (int articolo in courseList)
@@ -2205,7 +2182,7 @@ namespace RunPass
                 string sprice = ((int)(dprice * 100)).ToString();
                 cmdPrezzo.Text = sprice;
             }
-            cmdnoPrint.Number = _config.OverPrintClass;
+            
             cmdSublevelNP.Number = _config.SubLevelNoPrice;
 
             // Esecuzione Comandi
@@ -2222,11 +2199,28 @@ namespace RunPass
 
             if (noPrint)
             {
+                cmdnoPrint.Number = CondNoPrint();
                 OpsContext.ProcessCommand(cmdnoPrint);
-                OpsContext.ProcessCommand(cmdStorno);
+                //OpsContext.ProcessCommand(cmdStorno);
             }
         }
 
+        private long CondNoPrint()
+        {
+            var currentCheck = OpsContext.CheckDetail;
+            int UltimoItemLink = OpsContext.CurrentChildsParentItem;
+
+            var targetItem = OpsContext.CheckDetail.OfType<MenuItemDetail>()
+                .FirstOrDefault(item => item.DetailLink == UltimoItemLink);
+            long menuItemDefID = targetItem.MenuItemDefID;
+
+            int PrintClassObjNumb = DataStore.ReadMenuItemDefinitionByID(menuItemDefID).PrintClassObjNum;
+
+            long objcond = _config.PrintClass[PrintClassObjNumb];
+
+            return objcond;
+            
+        }
         public void ImpostaCorsa(object numCorsa = null)
         {
             if (!VerExtension()) return;

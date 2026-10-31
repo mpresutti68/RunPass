@@ -487,6 +487,10 @@ namespace RunPass
         }
 
         // PROPRIETÀ PUBBLICHE
+        public bool SePrimaCorsaMarciabile(int corsa)
+        {
+            return (!corseattuali.Keys.Any(idCorsa => SeCorsaMarciabile(idCorsa)) && !corsemarciate.Any());
+        }
         public bool SeTutteMarciate()
         {
             HashSet<int> corseusate = corseattuali.Keys.Where(k => SeCorsaMarciabile(k)).ToHashSet();
@@ -581,11 +585,11 @@ namespace RunPass
                 }
             }
             HashSet<int> corseusate = corseattuali.Keys.Where(k => SeCorsaMarciabile(k)).ToHashSet();
-            if (corseusate.Count == 1 && SeCorsaMarciabile(corseusate.Single()) && !SeCorsaMarciata(corseusate.Single()))
+            /*if (corseusate.Count == 1 && SeCorsaMarciabile(corseusate.Single()) && !SeCorsaMarciata(corseusate.Single()))
             {
                 AddMarciata(corseusate.Single());
             }
-            if (aggDatiComanda) OnAggiornaDatiComanda();
+            if (aggDatiComanda) OnAggiornaDatiComanda();*/
 
 
         }
@@ -819,6 +823,7 @@ namespace RunPass
         public string ConnStringSqlServer { get; } = "Server=LocalHost\\SQlExpress;Database=datastore;";
         public string Account { get; } = "Uid=chkrdy;Pwd=chkrdy1$;";
         public string ConnString { get; set; } = "";
+        public int PrimaCorsaCreata { get; set; } = 0;
     }
 
     public class Application : OpsExtensibilityApplication
@@ -2001,6 +2006,7 @@ namespace RunPass
                         {
                             valore = articolo.KdsCourseNum;
                             bool sesorsasggiuntassomandamarciata = _gestioneCorse.SeCorsaAggiuntaAComandaFinita(valore);
+                            bool seprimacorsa = _gestioneCorse.SePrimaCorsaMarciabile(valore);
                             if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
                             {
                                 cmdCambioCorsa(valoreCorsa);
@@ -2009,6 +2015,10 @@ namespace RunPass
                             {
                                 valoreCorsa = valore;
                             } //se l'articolo ha una corsa, la variabile valoreCorsa viene aggiornata con il valore della corsa dell'articolo
+                            if (seprimacorsa)   //verifica se si tratta della prima corsa marciabile, in tal caso viene marciata automaticamente
+                            {
+                                _gestioneCorse.AddMarciata(valoreCorsa);
+                            }
                             if (sesorsasggiuntassomandamarciata)   //verifica se si tratta di una corsa 'aggiuntiva' e che non sia già presente e che siano tutte marciate
                             {
                                 bool risposta = OpsContext.AskQuestion("Tutte le altre corse sono marciate. Procedo anche con questa?");

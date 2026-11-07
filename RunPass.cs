@@ -902,7 +902,8 @@ namespace RunPass
             //this.OpsCancelOrderEvent += GestCancelOrder;
             //this.OpsTransactionCancelEvent += GestTransactionCancel;
             //this.OpsSvcTotalEvent += GestSvcTotal;
-            
+            this.OpsChangeServingPeriodEvent += GestChangeServingPeriodEvent;
+
         }
 
         private bool VerExtension()
@@ -942,6 +943,20 @@ namespace RunPass
             return (_config.SequenceMode != 0);
         }
 
+        private EventProcessingInstruction GestChangeServingPeriodEvent(object sender, OpsChangeServingPeriodEventArgs args)
+        {
+            if (!VerExtension()) return EventProcessingInstruction.Continue;
+
+            MyLog.Debug("EventSignIn");
+            if (ambiente.ActualRvc != OpsContext.RvcID)
+            {
+                ambiente.Ce = _config.RvcCourseMng.Contains(OpsContext.RvcNumber);
+                ambiente.Me = _config.RvcMenu.Contains(OpsContext.RvcNumber) && _config.Suite.Count > 0;
+                if (ambiente.Ce) LoadDevice();
+                ambiente.ActualRvc = OpsContext.RvcID;
+            }
+            return EventProcessingInstruction.Continue;
+        }
         private EventProcessingInstruction GestVoidItem(object sender, OpsMenuItemEventArgs args)
         {
             if (!VerExtension()) return EventProcessingInstruction.Continue;
@@ -1945,7 +1960,7 @@ namespace RunPass
             ambiente.Me = _config.RvcMenu.Contains(OpsContext.RvcNumber) && _config.Suite.Count > 0; // il menu è attivo se il revenue center fa parte della lista e l'elenco dei suite non è vuoto
 
             if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
-            
+
             if (ambiente.Me && (_listaMenu is null || ambiente.ActualRvc != OpsContext.RvcID))
             {
                 var allContentData = DataStore.ReadAllContent(OpsContext.RvcID);
@@ -1961,6 +1976,11 @@ namespace RunPass
             }
             ambiente.ActualRvc = OpsContext.RvcID;
             return EventProcessingInstruction.Continue;
+        }
+
+        private void Verificaperdevice()
+        {
+            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
         }
 
         private void LoadDevice()
@@ -2017,7 +2037,7 @@ namespace RunPass
 
             if (!VerExtension() && !VerMenuItem()) return EventProcessingInstruction.Continue;
 
-            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
+            //Verificaperdevice();
 
             VerificaExtension(false);
 
@@ -2068,7 +2088,7 @@ namespace RunPass
 
             if (!VerExtension() && !VerMenuItem()) return EventProcessingInstruction.Continue;
 
-            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
+            //Verificaperdevice();
 
             VerificaExtension(true);
 

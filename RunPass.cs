@@ -223,6 +223,8 @@ namespace RunPass
         public int Riga_Intestazione_3 { get; set; } = 2;
         public int PrintVoid { get; set; } = 0;
         public int SequenceMode { get; set; } = 1;
+        public int BloccaCorseChiuse { get; set; } = 1;
+        public int PrimaCorsaMarciata { get; set; } = 1;
         public bool SeOrdineMarcia(long objnum)
         {
             return objnum == Marciato;
@@ -900,6 +902,7 @@ namespace RunPass
             //this.OpsCancelOrderEvent += GestCancelOrder;
             //this.OpsTransactionCancelEvent += GestTransactionCancel;
             //this.OpsSvcTotalEvent += GestSvcTotal;
+            
         }
 
         private bool VerExtension()
@@ -928,6 +931,15 @@ namespace RunPass
                 MyLog.Debug("FC569513 - Gestione Menu non Attiva");
             }
             return ambiente.Me;
+        }
+
+        private bool VerSequenceMode()
+        {
+            if (_config.SequenceMode==0)
+            {
+                MyLog.Debug("FC567713 - Geestione Sequenziale non Attiva");
+            }
+            return (_config.SequenceMode != 0);
         }
 
         private EventProcessingInstruction GestVoidItem(object sender, OpsMenuItemEventArgs args)
@@ -996,45 +1008,45 @@ namespace RunPass
             return EventProcessingInstruction.Continue;
         }
 
-        private EventProcessingInstruction GestCancelOrder(object sender, OpsCancelOrderEventArgs args)
+        /*private EventProcessingInstruction GestCancelOrder(object sender, OpsCancelOrderEventArgs args)
         {
             OpsContext.ShowMessage(MessageSow("OpsCancelOrderEvent"));
             rpl.Dispose();
             MyLog.Debug("OpsCancelOrderEvent");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
-        private EventProcessingInstruction GestFinalTender(object sender, OpsTmedEventArgs args)
+        /*private EventProcessingInstruction GestFinalTender(object sender, OpsTmedEventArgs args)
         {
             OpsContext.ShowMessage(MessageSow("OpsFinalTenderEvent"));
             rpl.Dispose();
             MyLog.Debug("OpsFinalTenderEvent");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
-        private EventProcessingInstruction GestTransactionCancel(object sender, OpsTransactionCancelPreviewEventArgs args)
+        /*private EventProcessingInstruction GestTransactionCancel(object sender, OpsTransactionCancelPreviewEventArgs args)
         {
             OpsContext.ShowMessage(MessageSow("OpsTransactionCancelEvent"));
             rpl.Dispose();
             MyLog.Debug("OpsTransactionCancelEvent");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
-        private EventProcessingInstruction GestSvcTotal(object sender, OpsTmedEventArgs args)
+        /*private EventProcessingInstruction GestSvcTotal(object sender, OpsTmedEventArgs args)
         {
             OpsContext.ShowMessage(MessageSow("OpsSvcTotalEvent"));
             rpl.Dispose();
             MyLog.Debug("OpsSvcTotalEvent");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
 
-        private EventProcessingInstruction GestPrinterDataEvent(object sender, OpsPrinterDataArgs args)
+        /*private EventProcessingInstruction GestPrinterDataEvent(object sender, OpsPrinterDataArgs args)
         {
             if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(MessageSow("OpsPrinterDataEvent"));
             MyLog.Debug("OpsPrinterDataEvent");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
         private DatiComanda PreparaDatiComanda()
         {
@@ -1154,7 +1166,6 @@ namespace RunPass
             return dati;
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0028:Simplify collection initialization", Justification = "<Pending>")]
         private List<MenuItemPrint> PreparaListaArticoliComandaTest(Dictionary<int, string> corse)
         {
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
@@ -1192,8 +1203,10 @@ namespace RunPass
                 priceCond = "1.0";
 
                 CondimentPrint Condiments = new CondimentPrint { Nome = nomeCond, Prezzo = priceCond, Quant = quantCond, Reference = referenceCond, Peso = pesocond };
-                List<CondimentPrint> ListaCondiment = new List<CondimentPrint> { };
-                ListaCondiment.Add(Condiments);
+                List<CondimentPrint> ListaCondiment = new List<CondimentPrint>
+                {
+                    Condiments
+                };
 
                 MenuItemPrint Articolo = new MenuItemPrint
                 { Quant = quant, Nome = nomeArt, Prezzo = price, Corsa = corsaart, Condiments = ListaCondiment, Numcorsa = corsanum, Reference = referenceArt, Peso = pesoart, Seat = seatart };
@@ -1216,8 +1229,10 @@ namespace RunPass
                 priceCond = "2.0";
 
                 Condiments = new CondimentPrint { Nome = nomeCond, Prezzo = priceCond, Quant = quantCond, Reference = referenceCond, Peso = pesocond };
-                ListaCondiment = new List<CondimentPrint> { };
-                ListaCondiment.Add(Condiments);
+                ListaCondiment = new List<CondimentPrint>
+                {
+                    Condiments
+                };
 
                 Articolo = new MenuItemPrint
                 { Quant = quant, Nome = nomeArt, Prezzo = price, Corsa = corsaart, Condiments = ListaCondiment, Numcorsa = corsanum, Reference = referenceArt, Peso = pesoart, Seat = seatart };
@@ -1609,9 +1624,9 @@ namespace RunPass
                 }
                 else
                 {
-                    if ((_config.PrintVoid == 3) ||
+                    if (!((_config.PrintVoid == 3) ||
                  (_config.PrintVoid == 2 && _gestioneCorse.SeCorsaChiusa(numcorsa)) ||
-                 (_config.PrintVoid == 1 && !_gestioneCorse.SeImmediata(numcorsa)))
+                 (_config.PrintVoid == 1 && !_gestioneCorse.SeImmediata(numcorsa))))
                     {
                         // Articolo Annullato -- testo doppio  -- 
                         corpo.AddRange(EscPos.AlignLeft);
@@ -1900,26 +1915,26 @@ namespace RunPass
             }
         }
 
-        private EventProcessingInstruction SelectedItemCompleteQuery(object sender, OpsSelectedItemCompleteQueryEventArgs args)
+        /*private EventProcessingInstruction SelectedItemCompleteQuery(object sender, OpsSelectedItemCompleteQueryEventArgs args)
         {
             if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(MessageSow("SelectedItemComplete"));
             MyLog.Debug("SelectedItemComplete");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
-        private EventProcessingInstruction ItemSelected(object sender, OpsItemSelectedEventArgs args)
+        /*private EventProcessingInstruction ItemSelected(object sender, OpsItemSelectedEventArgs args)
         {
             if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(MessageSow("SelectedItem"));
             MyLog.Debug("SelectedItem");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
-        private EventProcessingInstruction GestPreviewMI(object sender, OpsMenuItemEventArgs args)
+        /*private EventProcessingInstruction GestPreviewMI(object sender, OpsMenuItemEventArgs args)
         {
             if (_config.VerbosityDisplay > 0) OpsContext.ShowMessage(MessageSow("OpsMiPreviewEvent"));
             MyLog.Debug("OpsMiPreviewEvent");
             return EventProcessingInstruction.Continue;
-        }
+        }*/
 
         private EventProcessingInstruction GestSignIn(object sender, OpsSignInPreviewEventArgs args)
         {
@@ -2002,6 +2017,8 @@ namespace RunPass
 
             if (!VerExtension() && !VerMenuItem()) return EventProcessingInstruction.Continue;
 
+            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
+
             VerificaExtension(false);
 
             return EventProcessingInstruction.Continue;
@@ -2051,6 +2068,8 @@ namespace RunPass
 
             if (!VerExtension() && !VerMenuItem()) return EventProcessingInstruction.Continue;
 
+            if ((_device is null || ambiente.ActualRvc != OpsContext.RvcID) && ambiente.Ee) LoadDevice();
+
             VerificaExtension(true);
 
             return EventProcessingInstruction.Continue;
@@ -2076,7 +2095,7 @@ namespace RunPass
                         {
                             valore = articolo.KdsCourseNum;
                             bool sesorsasggiuntassomandamarciata = _gestioneCorse.SeCorsaAggiuntaAComandaFinita(valore);
-                            bool seprimacorsa = _gestioneCorse.SePrimaCorsaMarciabile();
+                            bool seprimacorsamarciata = _gestioneCorse.SePrimaCorsaMarciabile() && _config.PrimaCorsaMarciata == 1;
                             if (valore == 0)  // L'articolo non ha una corsa, gli viene assegnata quella corrente
                             {
                                 CmdCambioCorsa(valoreCorsa);
@@ -2085,7 +2104,7 @@ namespace RunPass
                             {
                                 valoreCorsa = valore;
                             } //se l'articolo ha una corsa, la variabile valoreCorsa viene aggiornata con il valore della corsa dell'articolo
-                            if (seprimacorsa)   //verifica se si tratta della prima corsa marciabile, in tal caso viene marciata automaticamente
+                            if (seprimacorsamarciata)   //verifica se si tratta della prima corsa marciabile, in tal caso viene marciata automaticamente
                             {
                                 _gestioneCorse.AddMarciata(valoreCorsa);
                             }
@@ -2482,6 +2501,7 @@ namespace RunPass
         {
             if (!VerExtension()) return;
             if (!VerCourseMng()) return;
+            if (!VerSequenceMode()) return;
 
             if (OpsContext.Check != null)
             {
@@ -2500,6 +2520,11 @@ namespace RunPass
             if (!VerExtension()) return;
             if (!VerCourseMng()) return;
 
+            if (_gestioneCorse.SeCorsaChiusa(Convert.ToInt32(numCorsa)) && _config.BloccaCorseChiuse == 1)
+            {
+                OpsContext.ShowMessage(MessageSow("Corsa Chiusa!!!"));
+                return;
+            }
             if (OpsContext.Check != null)
             {
                 _gestioneCorse.SetCorsa(Convert.ToInt32(numCorsa));
@@ -2537,9 +2562,9 @@ namespace RunPass
             DatiComanda datiComanda = PreparaDatiComadaTest();
             Dictionary<int, string> corse = LeggiNomiCorse();
             List<MenuItemPrint> ListaArticoli = PreparaListaArticoliComandaTest(corse);
-            List<byte> payload = new List<byte>();
-            byte[] data = payload.ToArray();
-            payload = Comanda_OD_100_00(Convert.ToInt32(OrderDevice), datiComanda, ListaArticoli);
+            //List<byte> payload = new List<byte>();
+            //byte[] data = payload.ToArray();
+            List<byte> payload = Comanda_OD_100_00(Convert.ToInt32(OrderDevice), datiComanda, ListaArticoli);
             OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(Convert.ToInt32(OrderDevice));
             StampaComanda(payload.ToArray(), device, true);
             MyLog.Debug($"Fine Stampa Comanda device {OrderDevice}");
@@ -2550,6 +2575,8 @@ namespace RunPass
         {
             if (!VerExtension()) return;
             if (!VerCourseMng()) return;
+            if (!VerSequenceMode()) return;
+
             if (_gestioneCorse.SeTutteMarciate())
             {
                 OpsContext.ShowMessage("Tuure le corse sono Marciate");
@@ -2596,7 +2623,7 @@ namespace RunPass
 
             if (!VerExtension()) return;
 
-            OpsContext.ShowMessage(MessageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version.ToString()}\nScadenza {ambiente.MeseScadenza}/{ambiente.AnnoScadenza}\nGestione Corse abilitata {ambiente.Ce}\nGestione Menu abilitata {ambiente.Me}"));
+            OpsContext.ShowMessage(MessageSow($"Versione Estesione{Assembly.GetExecutingAssembly().GetName().Version}\nScadenza {ambiente.MeseScadenza}/{ambiente.AnnoScadenza}\nGestione Corse abilitata {ambiente.Ce}\nGestione Menu abilitata {ambiente.Me}"));
         }
 
         [ExtensibilityMethod]

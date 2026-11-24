@@ -1383,9 +1383,9 @@ namespace RunPass
                 {
                     for (int i = 0; i < device.NumeroCopie; i++)
                     {
-                        byte[]  payload = PreparaComanda(device, articolidastampare[od], i+1);
+                        byte[] payload = PreparaComanda(device, articolidastampare[od], i + 1);
                         StampaComanda(payload.ToArray(), device);
-                    }
+                     }              
                 }
             }
         }
@@ -1393,7 +1393,6 @@ namespace RunPass
         private byte[] PreparaComanda(OrderDeviceCache.OrderDeviceInfo device, Dictionary<int, List<MenuItemPrint>> listaArticoli,int copia)
         {
             List<byte> payload = new List<byte>();
-            Dictionary<int, string> corse = LeggiNomiCorse();
             DatiComanda datiComanda = PreparaDatiComanda();
 
             switch (device.CustomName)
@@ -1412,7 +1411,7 @@ namespace RunPass
                 IEnumerable<MenuItemPrint> items)
         {
             var risultato = new Dictionary<int, Dictionary<int, List<MenuItemPrint>>>();
-
+     
             if (items == null)
             {
                 return risultato;
@@ -1684,10 +1683,11 @@ namespace RunPass
         List<byte> Corpo_000(Dictionary<int, List<MenuItemPrint>>  listaArticoli, OrderDeviceCache.OrderDeviceInfo device)
         {
             List<byte> corpo = new List<byte>();
+            Dictionary<int, string> corse = LeggiNomiCorse();
             string riga;
             int odIndex = int.Parse(device.OrdDvcIndex);
-            //int corsacorr = 0;
             int odsecondaria = 0;
+            bool printSecond = device.PrintSecondaryItems;
 
             foreach (var kvp in listaArticoli.OrderBy(k => k.Key))
             {
@@ -1705,13 +1705,13 @@ namespace RunPass
                 {
                     corpo.AddRange(EscPos.TextNormal);
                     corpo.AddRange(EscPos.NoColorInv);
-                    riga = string.Format("\r\n{0}\r\n\r\n", numCorsa);
+                    riga = string.Format("\r\n{0}\r\n\r\n", corse[numCorsa]);
                 }
                 else
                 {
                     corpo.AddRange(EscPos.TextDoubleHeight);
                     corpo.AddRange(EscPos.ColorInv);
-                    riga = string.Format("\r\nSegue {0}\r\n\r\n", numCorsa);
+                    riga = string.Format("\r\nSegue {0}\r\n\r\n", corse[numCorsa]);
                 }
                 corpo.AddRange(_codificaStampante.GetBytes(riga));
                 //corsacorr = numCorsa;
@@ -1827,7 +1827,7 @@ namespace RunPass
                             }
                         }
                     }
-                    else
+                    else if (!articolo.Primario && printSecond && _device.GetDevice(articolo.ODIndex).SendSencodaryItems)
                     {
                         StringBuilder art;
                         if (articolo.ODIndex > odsecondaria)
@@ -2726,6 +2726,8 @@ namespace RunPass
                     return;
                 }
 
+                AggiornaHold();
+
                 OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.SaveOrder));
                 if (_config.ChiudiContoDopoMarcia == 1)
                 {
@@ -2995,6 +2997,12 @@ namespace RunPass
                 MyLog.Debug("Test Mode no stampa");
             else
                 StampaComande();
+            OpsCommand chiudiConto = new OpsCommand(OpsCommandType.TenderMedia)
+            {
+                Number = _config.TM_SendOrder
+            };
+            OpsContext.ProcessCommand(chiudiConto);
+
         }
 
         

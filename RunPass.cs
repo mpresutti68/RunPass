@@ -400,9 +400,11 @@ namespace RunPass
         public string Corsa { get; set; }
         public string Seat { get; set; }
         public int ODIndex { get; set; }
+        public List<int> OrderDevices { get; set; }
         public bool IsVoid { get; set; }
         public bool Primario { get; set; } = true;
         public List<CondimentPrint> Condiments { get; set; }
+        public bool Inviato { get; set; }
     }
 
     public class DatiComanda
@@ -984,6 +986,12 @@ namespace RunPass
             return (_config.SequenceMode != 0);
         }
 
+        private EventProcessingInstruction GestSvcTotal(object sender, OpsTmedEventArgs args)
+        {
+            if (args.Name != "Keep Held Status") return EventProcessingInstruction.Continue;
+            return EventProcessingInstruction.Continue;
+        }
+
         private EventProcessingInstruction GestChangeServingPeriodEvent(object sender, OpsChangeServingPeriodEventArgs args)
         {
             if (!VerExtension()) return EventProcessingInstruction.Continue;
@@ -1361,60 +1369,131 @@ namespace RunPass
 
         private EventProcessingInstruction GestOpsCustomOrderDeviceEventArgs(object sender, OpsCustomOrderDeviceEventArgs args)
         {
-            MyLog.Debug("OpsCustomOrderDeviceEventArgs");
-            if (!VerExtension()) return EventProcessingInstruction.Continue;
-            if (!VerCourseMng()) return EventProcessingInstruction.Continue;
+            return EventProcessingInstruction.Continue;
+        }
 
-            if (_config.Testmode == 1)
+        private void StampaComande()
+        {
+            Dictionary<int, Dictionary<int, List<MenuItemPrint>>> articolidastampare = PreparaListaArticoliComanda();
+            foreach (OrderDeviceCache.OrderDeviceInfo device in _device)
             {
-                MyLog.Debug("Test Mode no stampa");
-                return EventProcessingInstruction.Continue;
-            }
-
-            // Test verifica trattasi print di backup
-            var fingerprintLines = args.Detail
-                .Where(d => d != null && !string.IsNullOrEmpty(d.MiName))
-                .Select(d => d.MiName.Trim())
-                .Take(5);
-            string printContent = string.Join("|", fingerprintLines);
-            string cacheKey = $"{args.OrderDeviceIndex}_{printContent.GetHashCode()}";
-            CleanUpCache();
-            if (_processedPrints.TryGetValue(cacheKey, out DateTime lastProcessed))
-            {
-                // Se la stessa comanda è passata negli ultimi 3 secondi, è sicuramente 
-                // l'evento di backup sollevato dal Print Controller. Interrompiamo l'esecuzione.
-                if ((DateTime.Now - lastProcessed).TotalSeconds < 3)
+                int od = int.TryParse(device.OrdDvcIndex, out int parsed) ? parsed : 0;
+                bool presente = articolidastampare != null && articolidastampare.ContainsKey(od);
+                if (presente)
                 {
-                    return EventProcessingInstruction.Continue;
+                    for (int i = 0; i < device.NumeroCopie; i++)
+                    {
+                        byte[]  payload = PreparaComanda(device, articolidastampare[od], i+1);
+                        StampaComanda(payload.ToArray(), device);
+                    }
                 }
             }
-            _processedPrints[cacheKey] = DateTime.Now;
-            // Fine test
+        }
 
-            List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
+        private byte[] PreparaComanda(OrderDeviceCache.OrderDeviceInfo device, Dictionary<int, List<MenuItemPrint>> listaArticoli,int copia)
+        {
+            List<byte> payload = new List<byte>();
             Dictionary<int, string> corse = LeggiNomiCorse();
             DatiComanda datiComanda = PreparaDatiComanda();
 
-            List<byte> payload = new List<byte>();
-            byte[] data = payload.ToArray();
-
-            OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(args.OrderDeviceIndex);
-
-            if (device.CustomName.Substring(0, 2) == "OD")
+            switch (device.CustomName)
             {
-                ListaArticoli = PreparaListaArticoliComanda(args, corse);
-                for (int i = 0; i < device.NumeroCopie; i++)
-                {
-                    if (device.CustomName == "OD_100_00")
-                    {
-                        payload = Comanda_OD_100_00(device, datiComanda, ListaArticoli,i + 1);
-                    }
-                    StampaComanda(payload.ToArray(), device);
-                }
-                
+                case "OD_100_00":
+                    payload = Comanda_OD_100_00(device, datiComanda, listaArticoli, copia);
+                    break;
+                default:
+                    MyLog.Warn($"Dispositivo {device.CustomName} non gestito.");
+                    break;
             }
-            return EventProcessingInstruction.Continue;
+            return payload.ToArray();
+        }
 
+        public static Dictionary<int, Dictionary<int, List<MenuItemPrint>>> RaggruppaPerOdPoiCorsa(
+                IEnumerable<MenuItemPrint> items)
+        {
+            var risultato = new Dictionary<int, Dictionary<int, List<MenuItemPrint>>>();
+
+            if (items == null)
+            {
+                return risultato;
+            }
+
+            var espansiList = items
+                .Where(x => x != null && !x.Inviato && x.OrderDevices != null && x.OrderDevices.Count > 0)
+                .SelectMany(item => item.OrderDevices.Distinct().Select(od => new MenuItemPrint
+                {
+                    Miobjnum = item.Miobjnum,
+                    Quant = item.Quant,
+                    Nome = item.Nome,
+                    Reference = item.Reference,
+                    Prezzo = item.Prezzo,
+                    Peso = item.Peso,
+                    Numcorsa = item.Numcorsa,
+                    Corsa = item.Corsa ?? string.Empty,
+                    Seat = item.Seat,
+                    ODIndex = od,
+                    OrderDevices = item.OrderDevices,
+                    IsVoid = item.IsVoid,
+                    Primario = item.Primario,
+                    Condiments = item.Condiments,
+                    Inviato = item.Inviato
+                }))
+                .ToList();
+
+            var tuttiOdIndex = espansiList
+                .Select(x => x.ODIndex)
+                .Distinct()
+                .OrderBy(od => od);
+
+            var gruppiPerCorsa = espansiList
+                .GroupBy(x => x.Numcorsa)
+                .OrderBy(g => g.Key)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (int odIndex in tuttiOdIndex)
+            {
+                var dizionarioCorse = new Dictionary<int, List<MenuItemPrint>>();
+
+                foreach (var kvpCorsa in gruppiPerCorsa)
+                {
+                    int numCorsa = kvpCorsa.Key;
+                    List<MenuItemPrint> itemsDellaCorsa = kvpCorsa.Value;
+
+                    // Include solo le corse che hanno almeno un item per questo odIndex
+                    // (se vuoi includere anche le corse dove odIndex non compare, rimuovi questa guardia)
+                    if (!itemsDellaCorsa.Any(x => x.ODIndex == odIndex))
+                    {
+                        continue;
+                    }
+
+                    dizionarioCorse[numCorsa] = itemsDellaCorsa
+                        .OrderBy(x => x.ODIndex == odIndex ? 0 : 1)
+                        .ThenBy(x => x.ODIndex)
+                        .Select(src => new MenuItemPrint
+                        {
+                            Miobjnum = src.Miobjnum,
+                            Quant = src.Quant,
+                            Nome = src.Nome,
+                            Reference = src.Reference,
+                            Prezzo = src.Prezzo,
+                            Peso = src.Peso,
+                            Numcorsa = src.Numcorsa,
+                            Corsa = src.Corsa,
+                            Seat = src.Seat,
+                            ODIndex = src.ODIndex,
+                            OrderDevices = src.OrderDevices,
+                            IsVoid = src.IsVoid,
+                            Primario = src.ODIndex == odIndex,
+                            Condiments = src.Condiments,
+                            Inviato = src.Inviato
+                        })
+                        .ToList();
+                }
+
+                risultato[odIndex] = dizionarioCorse;
+            }
+
+            return risultato;
         }
 
         private void StampaComanda(byte[] data, OrderDeviceCache.OrderDeviceInfo device, bool test = false)
@@ -1438,12 +1517,9 @@ namespace RunPass
         {
             using (TcpClient client = new TcpClient())
             {
-
                 try
                 {
-
                     client.Connect(IPPrinter, PortaPrinter);
-
 
                     using (NetworkStream stream = client.GetStream())
                     {
@@ -1510,7 +1586,6 @@ namespace RunPass
                 {
                     // ConnectAsync genera un'AggregateException (che contiene una SocketException) 
                     // se la connessione viene esplicitamente rifiutata (es. porta sbagliata)
-                    //Console.WriteLine($"Errore di rete durante la connessione alla stampante: {ip}:{porta}");
                     if (!primotent)
                         MyLog.Error($"68CCC233 - Errore stampante: {ip}:{porta}", ex);
                     else
@@ -1525,24 +1600,23 @@ namespace RunPass
                         MyLog.Info("Stampante primaria non disponibile, invio backup");
                     return false;
                 }
-            } // Il blocco using chiuderà il TcpClient di test liberando le risorse
+            }
         }
 
-        List<byte> Comanda_OD_100_00(OrderDeviceCache.OrderDeviceInfo device, DatiComanda datiComanda, List<MenuItemPrint> listaArticoli, int copia=1)
+        List<byte> Comanda_OD_100_00(OrderDeviceCache.OrderDeviceInfo device, DatiComanda datiComanda, Dictionary<int, List<MenuItemPrint>> listaArticoli, int copia=1)
         {
             List<byte> payload = new List<byte>();
-            int ODIndex = int.Parse(device.OrdDvcIndex);
-
+            
             // Inizializza stampante
             payload.AddRange(EscPos.Initialize);
             payload.AddRange(EscPos.impostaCodePage850);
             payload.AddRange(EscPos.AlignCenter);
 
             //Header
-            payload.AddRange(Header_000(ODIndex, datiComanda, copia, device.NumeroCopie));
+            payload.AddRange(Header_000(int.Parse(device.OrdDvcIndex), datiComanda, copia, device.NumeroCopie));
 
             // Corpo
-            payload.AddRange(Corpo_000(listaArticoli));
+            payload.AddRange(Corpo_000(listaArticoli, device));
 
             //Footer
             payload.AddRange(Footer_000(datiComanda));
@@ -1607,105 +1681,72 @@ namespace RunPass
             return intestazione;
         }
 
-        List<byte> Corpo_000(List<MenuItemPrint> listaArticoli)
+        List<byte> Corpo_000(Dictionary<int, List<MenuItemPrint>>  listaArticoli, OrderDeviceCache.OrderDeviceInfo device)
         {
             List<byte> corpo = new List<byte>();
             string riga;
-            
-            int corsacorr = 0;
+            int odIndex = int.Parse(device.OrdDvcIndex);
+            //int corsacorr = 0;
             int odsecondaria = 0;
-            foreach (MenuItemPrint articolo in listaArticoli)
+
+            foreach (var kvp in listaArticoli.OrderBy(k => k.Key))
             {
-                if (articolo.Primario)
+                int numCorsa = kvp.Key;
+                List<MenuItemPrint> articoliCorsa = kvp.Value;
+                if (articoliCorsa == null || articoliCorsa.Count == 0)
                 {
-                    int numcorsa = articolo.Numcorsa;
-                    if (numcorsa > corsacorr)
-                    {
-                        odsecondaria = 0;
-                        // Corsa -- testo grande, grassetto e invertito (se la corsa è già marciata),  centrato --
-                        corpo.AddRange(EscPos.AlignCenter);
+                    continue;
+                }
 
-                        if (_gestioneCorse.SeImmediata(numcorsa))
-                        {
-                            corpo.AddRange(EscPos.TextNormal);
-                            corpo.AddRange(EscPos.NoColorInv);
-                            riga = string.Format("\r\n{0}\r\n\r\n", articolo.Corsa);
-                        }
-                        else
-                        {
-                            corpo.AddRange(EscPos.TextDoubleHeight);
-                            corpo.AddRange(EscPos.ColorInv);
-                            riga = string.Format("\r\nSegue {0}\r\n\r\n", articolo.Corsa);
-                        }
-                        corpo.AddRange(_codificaStampante.GetBytes(riga));
-                        corsacorr = numcorsa;
-                    }
-                    if (!articolo.IsVoid)
-                    {
-                        // Articolo -- testo doppio  -- 
-                        corpo.AddRange(EscPos.AlignLeft);
-                        corpo.AddRange(EscPos.TextDoubleSize);
-                        corpo.AddRange(EscPos.NoColorInv);
-                        string artprint = articolo.Nome;
-                        string refprint = articolo.Reference;
-                        if (articolo.Nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.Nome.Substring(0, _config.LunghNomeArticoli - 1));
-                        if (articolo.Reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.Reference.Substring(0, _config.LunghNomeArticoli - 1));
-                        StringBuilder art = new StringBuilder();
-                        art.Append(articolo.Quant);
-                        art.Append(" ");
-                        if ((articolo.Nome == "" || articolo.Nome.StartsWith("#")) && articolo.Reference != "") art.Append(refprint);
-                        else art.Append(artprint);
-                        art.Append("\r\n");
-                        if (articolo.Nome != "" && articolo.Reference != "")
-                        {
-                            art.Append("  ");
-                            art.Append(articolo.Reference);
-                            art.Append("\r\n");
-                        }
-                        if (articolo.Peso != null && articolo.Peso != "")
-                        {
-                            art.Append("  Peso: ");
-                            art.Append(articolo.Peso);
-                            art.Append("\r\n");
-                        }
-                        corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
-                        foreach (CondimentPrint condimento in articolo.Condiments)
-                        {
-                            // Condimento -- testo doppia altezza sottolineato
-                            corpo.AddRange(EscPos.AlignLeft);
-                            corpo.AddRange(EscPos.TextDoubleHeight);
-                            StringBuilder cond = new StringBuilder();
-                            cond.Append("     ");
-                            if (condimento.Quant != "1")
+                odsecondaria = 0;
+                // Corsa -- testo grande, grassetto e invertito (se la corsa è già marciata),  centrato --
+                corpo.AddRange(EscPos.AlignCenter);
+                if (_gestioneCorse.SeImmediata(numCorsa))
+                {
+                    corpo.AddRange(EscPos.TextNormal);
+                    corpo.AddRange(EscPos.NoColorInv);
+                    riga = string.Format("\r\n{0}\r\n\r\n", numCorsa);
+                }
+                else
+                {
+                    corpo.AddRange(EscPos.TextDoubleHeight);
+                    corpo.AddRange(EscPos.ColorInv);
+                    riga = string.Format("\r\nSegue {0}\r\n\r\n", numCorsa);
+                }
+                corpo.AddRange(_codificaStampante.GetBytes(riga));
+                //corsacorr = numCorsa;
+                
+                foreach (MenuItemPrint articolo in articoliCorsa)
+                {
+                    if (articolo.Primario)
+                    { 
+                        //if (numCorsa > corsacorr)
+                        /*{
+                            odsecondaria = 0;
+                            // Corsa -- testo grande, grassetto e invertito (se la corsa è già marciata),  centrato --
+                            corpo.AddRange(EscPos.AlignCenter);
+
+                            if (_gestioneCorse.SeImmediata(numCorsa))
                             {
-                                cond.Append(condimento.Quant);
-                                cond.Append(" ");
+                                corpo.AddRange(EscPos.TextNormal);
+                                corpo.AddRange(EscPos.NoColorInv);
+                                riga = string.Format("\r\n{0}\r\n\r\n", articolo.Corsa);
                             }
-
-                            if ((condimento.Nome == "" || condimento.Nome.StartsWith("#")) && condimento.Reference != "") cond.Append(condimento.Reference);
-                            else cond.Append(condimento.Nome);
-
-                            if (!(condimento.Nome == "" || condimento.Nome.StartsWith("#")) && condimento.Reference != "")
+                            else
                             {
-                                cond.Append("\r\n     ");
-                                cond.Append(condimento.Reference);
+                                corpo.AddRange(EscPos.TextDoubleHeight);
+                                corpo.AddRange(EscPos.ColorInv);
+                                riga = string.Format("\r\nSegue {0}\r\n\r\n", articolo.Corsa);
                             }
-                            corpo.AddRange(_codificaStampante.GetBytes(cond.ToString()));
-                            corpo.AddRange(EscPos.NoUnderline);
-                            corpo.AddRange(_codificaStampante.GetBytes("\r\n"));
-
-                        }
-                    }
-                    else
-                    {
-                        if (!((_config.PrintVoid == 3) ||
-                     (_config.PrintVoid == 2 && _gestioneCorse.SeCorsaChiusa(numcorsa)) ||
-                     (_config.PrintVoid == 1 && !_gestioneCorse.SeImmediata(numcorsa))))
+                            corpo.AddRange(_codificaStampante.GetBytes(riga));
+                            corsacorr = numCorsa;
+                        }*/
+                        if (!articolo.IsVoid)
                         {
-                            // Articolo Annullato -- testo doppio  -- 
+                            // Articolo -- testo doppio  -- 
                             corpo.AddRange(EscPos.AlignLeft);
                             corpo.AddRange(EscPos.TextDoubleSize);
-                            corpo.AddRange(EscPos.ColorInv);
+                            corpo.AddRange(EscPos.NoColorInv);
                             string artprint = articolo.Nome;
                             string refprint = articolo.Reference;
                             if (articolo.Nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.Nome.Substring(0, _config.LunghNomeArticoli - 1));
@@ -1722,39 +1763,100 @@ namespace RunPass
                                 art.Append(articolo.Reference);
                                 art.Append("\r\n");
                             }
+                            if (articolo.Peso != null && articolo.Peso != "")
+                            {
+                                art.Append("  Peso: ");
+                                art.Append(articolo.Peso);
+                                art.Append("\r\n");
+                            }
                             corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
+                            foreach (CondimentPrint condimento in articolo.Condiments)
+                            {
+                                // Condimento -- testo doppia altezza sottolineato
+                                corpo.AddRange(EscPos.AlignLeft);
+                                corpo.AddRange(EscPos.TextDoubleHeight);
+                                StringBuilder cond = new StringBuilder();
+                                cond.Append("     ");
+                                if (condimento.Quant != "1")
+                                {
+                                    cond.Append(condimento.Quant);
+                                    cond.Append(" ");
+                                }
+
+                                if ((condimento.Nome == "" || condimento.Nome.StartsWith("#")) && condimento.Reference != "") cond.Append(condimento.Reference);
+                                else cond.Append(condimento.Nome);
+
+                                if (!(condimento.Nome == "" || condimento.Nome.StartsWith("#")) && condimento.Reference != "")
+                                {
+                                    cond.Append("\r\n     ");
+                                    cond.Append(condimento.Reference);
+                                }
+                                corpo.AddRange(_codificaStampante.GetBytes(cond.ToString()));
+                                corpo.AddRange(EscPos.NoUnderline);
+                                corpo.AddRange(_codificaStampante.GetBytes("\r\n"));
+
+                            }
+                        }
+                        else
+                        {
+                            if (!((_config.PrintVoid == 3) ||
+                         (_config.PrintVoid == 2 && _gestioneCorse.SeCorsaChiusa(numCorsa)) ||
+                         (_config.PrintVoid == 1 && !_gestioneCorse.SeImmediata(numCorsa))))
+                            {
+                                // Articolo Annullato -- testo doppio  -- 
+                                corpo.AddRange(EscPos.AlignLeft);
+                                corpo.AddRange(EscPos.TextDoubleSize);
+                                corpo.AddRange(EscPos.ColorInv);
+                                string artprint = articolo.Nome;
+                                string refprint = articolo.Reference;
+                                if (articolo.Nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.Nome.Substring(0, _config.LunghNomeArticoli - 1));
+                                if (articolo.Reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.Reference.Substring(0, _config.LunghNomeArticoli - 1));
+                                StringBuilder art = new StringBuilder();
+                                art.Append(articolo.Quant);
+                                art.Append(" ");
+                                if ((articolo.Nome == "" || articolo.Nome.StartsWith("#")) && articolo.Reference != "") art.Append(refprint);
+                                else art.Append(artprint);
+                                art.Append("\r\n");
+                                if (articolo.Nome != "" && articolo.Reference != "")
+                                {
+                                    art.Append("  ");
+                                    art.Append(articolo.Reference);
+                                    art.Append("\r\n");
+                                }
+                                corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
+                            }
                         }
                     }
-                }
-                else
-                {
-                    StringBuilder art;
-                    if (articolo.ODIndex > odsecondaria)
+                    else
                     {
-                        //Intestazione OrderDevice Secondara
-                        corpo.AddRange(EscPos.AlignLeft);
+                        StringBuilder art;
+                        if (articolo.ODIndex > odsecondaria)
+                        {
+                            //Intestazione OrderDevice Secondara
+                            corpo.AddRange(EscPos.AlignLeft);
+                            corpo.AddRange(EscPos.TextNormal);
+                            corpo.AddRange(EscPos.TextBoldOn);
+                            art = new StringBuilder();
+                            art.Append("\r\n");
+                            art.Append(string.Format("Da {0}", _device.GetDevice(articolo.ODIndex).NomeOrderDevice));
+                            art.Append("\r\n");
+                            corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
+                            odsecondaria = articolo.ODIndex;
+                        }
                         corpo.AddRange(EscPos.TextNormal);
-                        corpo.AddRange(EscPos.TextBoldOn);
+                        corpo.AddRange(EscPos.TextBoldOff);
+                        string artprint = articolo.Nome;
+                        string refprint = articolo.Reference;
+                        if (articolo.Nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.Nome.Substring(0, _config.LunghNomeArticoli - 1));
+                        if (articolo.Reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.Reference.Substring(0, _config.LunghNomeArticoli - 1));
                         art = new StringBuilder();
-                        art.Append("\r\n");
-                        art.Append(string.Format("Da {0}", _device.GetDevice(articolo.ODIndex).NomeOrderDevice));
+                        art.Append(articolo.Quant);
+                        art.Append(" ");
+                        if ((articolo.Nome == "" || articolo.Nome.StartsWith("#")) && articolo.Reference != "") art.Append(refprint);
+                        else art.Append(artprint);
                         art.Append("\r\n");
                         corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
-                        odsecondaria = articolo.ODIndex;
                     }
-                    corpo.AddRange(EscPos.TextNormal);
-                    corpo.AddRange(EscPos.TextBoldOff);
-                    string artprint = articolo.Nome;
-                    string refprint = articolo.Reference;
-                    if (articolo.Nome.Length > _config.LunghNomeArticoli) artprint = string.Format("{0}.", articolo.Nome.Substring(0, _config.LunghNomeArticoli - 1));
-                    if (articolo.Reference.Length > _config.LunghNomeArticoli) refprint = string.Format("{0}.", articolo.Reference.Substring(0, _config.LunghNomeArticoli - 1));
-                    art = new StringBuilder();
-                    art.Append(articolo.Quant);
-                    art.Append(" ");
-                    if ((articolo.Nome == "" || articolo.Nome.StartsWith("#")) && articolo.Reference != "") art.Append(refprint);
-                    else art.Append(artprint);
-                    art.Append("\r\n");
-                    corpo.AddRange(_codificaStampante.GetBytes(art.ToString()));
                 }
             }
             return corpo;
@@ -1926,7 +2028,7 @@ namespace RunPass
             return corse;
         }
 
-        private List<MenuItemPrint> PreparaListaArticoliMarcia(int corsacorr)
+        /*private List<MenuItemPrint> PreparaListaArticoliMarcia(int corsacorr)
         {
             List<MenuItemPrint> ListaArticoli = new List<MenuItemPrint> { };
 
@@ -1984,7 +2086,7 @@ namespace RunPass
                 }
             }
             return ListaArticoli;
-        }
+        }*/
 
         private Dictionary<int, List<MenuItemPrint>> PreparaListeArticoliMarcia(int corsacorr)
         {
@@ -2043,6 +2145,62 @@ namespace RunPass
             }
 
             return dizionarioArticoli;
+        }
+
+        private Dictionary<int, Dictionary<int, List<MenuItemPrint>>> PreparaListaArticoliComanda()
+        {
+            var listaArticoli = new List<MenuItemPrint>();
+
+            foreach (CheckDetailItem riga in OpsContext.CheckDetail)
+            {
+                if (riga is MenuItemDetail item)
+                {
+                    bool inviato = (item.DetailPostingTime.Year > 1);
+                    string nomeArt = item.Name?.ToString() ?? string.Empty;
+                    string quant = item.SalesCount.ToString();
+                    string printopt = item.PrintOptionBits ?? string.Empty;
+                    string referenceArt = item.ReferenceEntries.Count > 0 ? item.ReferenceEntries[0].Descriptor : string.Empty;
+                    string pesoart = item.WeighedItem ? item.ItemWeight.ToString() : string.Empty;
+
+                    var listaCondiment = new List<CondimentPrint>();
+                    foreach (var cond in item.Condiments)
+                    {
+                        listaCondiment.Add(new CondimentPrint
+                        {
+                            Nome = cond.Name,
+                            Quant = cond.SalesCount.ToString(),
+                            Reference = cond.ReferenceEntries.Count > 0 ? cond.ReferenceEntries[0].Descriptor : string.Empty,
+                            Peso = string.Empty
+                        });
+                    }
+
+                    List<int> ods = new List<int>();
+                    foreach (OrderDeviceCache.OrderDeviceInfo device in _device)
+                    {
+                        if (int.TryParse(device.OrdDvcIndex, out int od))
+                        {
+                            int targetIndex = 7 + od;
+                            if (printopt.Length > targetIndex && printopt[targetIndex] == '1')
+                            {
+                                ods.Add(od);                                    
+                            }
+                        }
+                    }
+                    MenuItemPrint articolo = new MenuItemPrint
+                    {
+                        Quant = quant,
+                        Nome = nomeArt,
+                        Condiments = listaCondiment,
+                        Numcorsa = item.KdsCourseNum,
+                        Reference = referenceArt,
+                        Peso = pesoart,
+                        OrderDevices = ods,
+                        Inviato = inviato
+                    };
+                    listaArticoli.Add(articolo);
+                }
+            }            
+            return RaggruppaPerOdPoiCorsa(listaArticoli);
         }
 
         private void CleanUpCache()
@@ -2545,7 +2703,6 @@ namespace RunPass
                     List<byte> payload = new List<byte>();
                     byte[] data = payload.ToArray();
 
-                    //ListaArticoli = PreparaListaArticoliMarcia(numCorsa);
                     ListeArticoli = PreparaListeArticoliMarcia(numCorsa);
 
                     string CustomName = "MA_100_00";
@@ -2603,6 +2760,37 @@ namespace RunPass
             {
                 OpsContext.ProcessCommand(cmdCondimento);
                 OpsContext.ProcessCommand(new OpsCommand(OpsCommandType.Void));
+
+            } 
+        }
+        public void CambiaStatoArticolo(int chkdet)
+        {
+            OpsCommand ItemSelected = new OpsCommand(OpsCommandType.DetailSelected)
+            {
+                Number = chkdet
+            };
+            var result = OpsContext.ProcessCommand(ItemSelected);
+            if (result != null && result.IsSuccess)
+            {
+                OpsCommand HoldItem = new OpsCommand(OpsCommandType.HoldMenuItemSelected);
+                OpsContext.ProcessCommand(HoldItem);
+            }
+        }
+
+        private void AggiornaHold()
+        {
+            List<OpsMenuItemDetail> menuItems = OpsContext.CheckDetail?
+                        .OfType<OpsMenuItemDetail>()
+                        .ToList() ?? new List<OpsMenuItemDetail>();
+            foreach (OpsMenuItemDetail item in menuItems)
+            {
+                bool seGiaInviato = (item.DetailPostingTime.Year > 1);
+                bool seMarciato = _gestioneCorse.Corsemarciate.Contains(item.KdsCourseNum);
+                if ((seMarciato && item.MiHold) || (!seMarciato && !item.MiHold && !seGiaInviato))
+                {
+                    CambiaStatoArticolo(item.DetailLink);
+                }
+                
             }
         }
 
@@ -2671,11 +2859,11 @@ namespace RunPass
             MyLog.Debug($"Inzio Stampa Comanda device {OrderDevice}");
             DatiComanda datiComanda = PreparaDatiComadaTest();
             Dictionary<int, string> corse = LeggiNomiCorse();
-            List<MenuItemPrint> ListaArticoli = PreparaListaArticoliComandaTest(corse);
+            //List<MenuItemPrint> ListaArticoli = PreparaListaArticoliComandaTest(corse);
             OrderDeviceCache.OrderDeviceInfo device = _device.GetDevice(Convert.ToInt32(OrderDevice));
-            List<byte> payload = Comanda_OD_100_00(device, datiComanda, ListaArticoli);
+            //List<byte> payload = Comanda_OD_100_00(device, datiComanda, ListaArticoli);
             
-            StampaComanda(payload.ToArray(), device, true);
+            //StampaComanda(payload.ToArray(), device, true);
             MyLog.Debug($"Fine Stampa Comanda device {OrderDevice}");
         }
 
@@ -2781,6 +2969,35 @@ namespace RunPass
             }
         }
 
+        [ExtensibilityMethod]
+        private void HoldItem()
+        {
+            OpsCommand SelectItem = new OpsCommand(OpsCommandType.FireByCourse);
+            OpsCommand HoldItem = new OpsCommand(OpsCommandType.HoldMenuItemSelected);
+            //HoldItem.Number = delaillink;
+            //HoldItem.Index = delaillink;
+            //HoldItem.Data = itemNumb;
+
+            var result = OpsContext.ProcessCommand(HoldItem);
+            OpsContext.ShowMessage("cc");
+        }
+
+        [ExtensibilityMethod]
+        public void SalvaCheck()
+        {
+            if (!VerExtension()) return;
+            MyLog.Debug("SalvaCheck");
+            if (!VerCourseMng()) return;
+            
+            AggiornaHold();
+
+            if (_config.Testmode == 1) 
+                MyLog.Debug("Test Mode no stampa");
+            else
+                StampaComande();
+        }
+
+        
         [ExtensibilityMethod]
         public void CancelCheck()
         {
